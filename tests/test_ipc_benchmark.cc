@@ -20,10 +20,14 @@ std::unordered_map<std::string, void *> _key_shm_addr;
 std::unordered_map<std::string, size_t> _key_shm_size;
 std::unordered_map<uint64_t, char*> store_;
 std::mutex mu_;
+std::string job_id = "0";
 
 void* OpenSharedMemory(const std::string& prefix, uint64_t key, size_t size) {
   std::string shm_name(prefix);
-  shm_name += std::to_string(key);
+  std::stringstream stream;
+  stream << std::hex << key;
+
+  shm_name += stream.str();
   int shm_fd = shm_open(shm_name.c_str(), O_CREAT | O_RDWR, 0666);
   CHECK_GE(shm_fd, 0) << "shm_open failed for " << shm_name;
   CHECK_GE(ftruncate(shm_fd, size), 0) << strerror(errno);
@@ -32,7 +36,7 @@ void* OpenSharedMemory(const std::string& prefix, uint64_t key, size_t size) {
   CHECK_NE(ptr, (void*)-1) << strerror(errno);
 
   LOG(INFO) << "initialized share memory size=" << size 
-            << " for key=" << key << ", name=" << shm_name;
+            << " for key=" << key << "(0x" << stream.str() << "), name=" << shm_name;
   _key_shm_addr[shm_name] = ptr;
   _key_shm_size[shm_name] = size;
   return ptr;
@@ -194,7 +198,8 @@ void RunWorker(int argc, char *argv[]) {
   for (int i = 0; i < total_key_num; i++) {
     auto key = EncodeKey(i);
     SArray<char> vals;
-    auto addr = (char*) OpenSharedMemory(std::string("BytePS_ShM_"), key, len);
+    auto addr = (char*) OpenSharedMemory(std::string("BytePS_ShM_") + job_id + "_",
+                                         key, len);
     vals.reset((char*) addr, len, [](void *){});
     server_vals.push_back(vals);
   }
@@ -249,6 +254,11 @@ int main(int argc, char *argv[]) {
   const char* val = CHECK_NOTNULL(Environment::Get()->find("DMLC_ROLE"));
   std::string role_str(val);
   Node::Role role = GetRole(role_str);
+  auto job_id_str = Environment::Get()->find("BYTEPS_JOB_ID");
+  if (job_id_str) {
+    job_id = std::string(job_id_str);
+  }
+
   int rank = -1; // -1 means no preferred rank
   StartPS(0, role, rank, true);
   // setup server nodes

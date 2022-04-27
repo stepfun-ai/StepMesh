@@ -558,6 +558,9 @@ class IPCTransport : public RDMATransport {
     } else {
       shm_prefix_ = kShmPrefix;
     }
+    val = Environment::Get()->find("BYTEPS_JOB_ID");
+    std::string _job_id = val ? std::string(val) : "0";
+    shm_prefix_ = shm_prefix_ + _job_id + "_";
   };
 
   ~IPCTransport() {
@@ -671,7 +674,10 @@ class IPCTransport : public RDMATransport {
       return (void *)((char *)key_shm_addr_[base_key] + offset);
     }
     std::string shm_name(prefix);
-    shm_name += std::to_string(base_key);
+    std::stringstream stream;
+    stream << std::hex << base_key;
+
+    shm_name += stream.str();
     int shm_fd = shm_open(shm_name.c_str(), O_RDWR, 0666);
     CHECK_GE(shm_fd, 0) << "shm_open failed for " << shm_name << ", "
                         << strerror(errno);

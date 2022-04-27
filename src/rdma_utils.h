@@ -57,8 +57,10 @@ static const int kRdmaListenBacklog = 128;
 static const int kMaxHostnameLength = 16;
 
 // should have the same prefix with BytePS shared memory
+// for pcie reduce:  BytePS_Pcie_{pcie_id}_ShM_{JOB_ID}_{BYTEPS_KEY}
+// otherwise:        BytePS_ShM_{JOB_ID}_{BYTEPS_KEY}
 static const std::string kShmPrefix("BytePS_ShM_");
-static const std::string kShmPciePrefix("BytePS_Pcie");
+static const std::string kShmPciePrefix("BytePS_Pcie_");
 
 enum WRContextType {
   kRendezvousStartContext,

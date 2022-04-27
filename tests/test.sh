@@ -14,6 +14,10 @@ if [ "$#" != "5" ]; then
     exit -1
 fi
 
+
+shell_pid=$$
+echo "shell_pid $shell_pid"
+
 launch_mode=$1
 bytes_per_msg=$2
 msg_count=$3
@@ -128,7 +132,7 @@ export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
 # export BENCHMARK_NTHREAD=${BENCHMARK_NTHREAD:=$DMLC_GROUP_SIZE}
 export SKIP_DEV_ID_CHECK=${SKIP_DEV_ID_CHECK:-1}
 export DMLC_RANK=${DMLC_RANK:=0}
-export GDB=" gdb -ex run --args "
+export GDB=" gdb -ex run -batch --args "
 export GDB=" "
 
 if [ "$launch_mode" == "local" ] # no other args
