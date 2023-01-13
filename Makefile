@@ -51,6 +51,12 @@ CFLAGS += -DDMLC_USE_UCX
 	endif
 endif
 
+ifeq ($(USE_TP), 1)
+# Make sure the build of TP is compliant with ps-lite (e.g., -fPIC, C++ ABI)
+INCPATH += -I$(TP_INSTALL_PATH)/include
+CFLAGS += -DDMLC_USE_TP
+endif
+
 ifdef ASAN
 CFLAGS += -fsanitize=address -fno-omit-frame-pointer -fno-optimize-sibling-calls
 endif

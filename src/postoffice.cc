@@ -52,7 +52,13 @@ Postoffice::Postoffice(int instance_idx) {
 
 void Postoffice::InitEnvironment() {
   const char* val = NULL;
-  const char* van_type = GetEnv("DMLC_ENABLE_RDMA", "zmq");
+  const char* van_type_ptr = Environment::Get()->find("DMLC_ENABLE_RDMA");
+  std::string van_type;
+  if (!van_type_ptr) {
+    van_type = GetEnv("DMLC_PS_VAN_TYPE", "zmq");
+  } else {
+    van_type = van_type_ptr;
+  }
   int enable_ucx = GetEnv("DMLC_ENABLE_UCX", 0);
   val = Environment::Get()->find("DMLC_GROUP_SIZE");
   group_size_ = val ? atoi(val) : 1;
