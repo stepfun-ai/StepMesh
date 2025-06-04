@@ -102,9 +102,9 @@ size_t ParallelOrderedMatch(
     const SArray<K>& dst_key, C* dst_val,
     int k = 1, AssignOp op = ASSIGN, int num_threads = 1) {
   // do check
-  CHECK_GT(num_threads, 0);
-  CHECK_EQ(src_key.size() * k, src_val.size());
-  CHECK_NOTNULL(dst_val->resize(dst_key.size() * k));
+  PS_CHECK_GT(num_threads, 0);
+  PS_CHECK_EQ(src_key.size() * k, src_val.size());
+  PS_CHECK_NOTNULL(dst_val->resize(dst_key.size() * k));
   if (dst_key.empty()) return 0;
 
   // shorten the matching range

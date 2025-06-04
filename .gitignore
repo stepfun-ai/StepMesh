@@ -9,7 +9,6 @@ docs/html
 docs/xml
 docs/latex
 docs/_build
-tests/test_*
 *.pyc
 *.d
 
@@ -19,5 +18,6 @@ recommonmark/
 
 test_benchmark
 stress_test_benchmark
-!/tests/*.cc
 test
+.idea
+cmake_build

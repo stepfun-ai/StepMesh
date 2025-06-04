@@ -1,5 +1,6 @@
 /**
  *  Copyright (c) 2015 by Contributors
+ *  Modifications Copyright (C) by StepAI Contributors. 2025.
  */
 #ifndef PS_INTERNAL_UTILS_H_
 #define PS_INTERNAL_UTILS_H_
@@ -51,7 +52,17 @@ inline int GetEnv(const char *key, int default_val) {
   void operator=(const TypeName &)
 #endif
 
-#define LL LOG(ERROR)
+#define LL PS_LOG(ERROR)
+
+static inline uint64_t GetNanosecond() {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  uint64_t nsec = ts.tv_sec * 1000000000LL + ts.tv_nsec;
+  return nsec;
+}
 
 }  // namespace ps
+
+
+static int PS_VERBOSE = ps::GetEnv("PS_VERBOSE", 0);
 #endif  // PS_INTERNAL_UTILS_H_

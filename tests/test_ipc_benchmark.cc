@@ -29,13 +29,13 @@ void* OpenSharedMemory(const std::string& prefix, uint64_t key, size_t size) {
 
   shm_name += stream.str();
   int shm_fd = shm_open(shm_name.c_str(), O_CREAT | O_RDWR, 0666);
-  CHECK_GE(shm_fd, 0) << "shm_open failed for " << shm_name;
-  CHECK_GE(ftruncate(shm_fd, size), 0) << strerror(errno);
+  PS_CHECK_GE(shm_fd, 0) << "shm_open failed for " << shm_name;
+  PS_CHECK_GE(ftruncate(shm_fd, size), 0) << strerror(errno);
 
   void* ptr = mmap(0, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
-  CHECK_NE(ptr, (void*)-1) << strerror(errno);
+  PS_CHECK_NE(ptr, (void*)-1) << strerror(errno);
 
-  LOG(INFO) << "initialized share memory size=" << size 
+  PS_LOG(INFO) << "initialized share memory size=" << size 
             << " for key=" << key << "(0x" << stream.str() << "), name=" << shm_name;
   _key_shm_addr[shm_name] = ptr;
   _key_shm_size[shm_name] = size;
@@ -56,8 +56,8 @@ void aligned_memory_alloc(void** ptr, size_t size) {
   void* p;
   int size_aligned = ROUNDUP(size, page_size);
   int ret = posix_memalign(&p, page_size, size_aligned);
-  CHECK_EQ(ret, 0) << "posix_memalign error: " << strerror(ret);
-  CHECK(p);
+  PS_CHECK_EQ(ret, 0) << "posix_memalign error: " << strerror(ret);
+  PS_CHECK(p);
   memset(p, 0, size);
   *ptr = p;
 }
@@ -67,8 +67,8 @@ template <typename Val>
 void EmptyHandler(const KVMeta &req_meta, const KVPairs<Val> &req_data, KVServer<Val> *server) {
   uint64_t key = DecodeKey(req_data.keys[0]);
   if (req_meta.push) {
-    CHECK(req_data.lens.size());
-    CHECK_EQ(req_data.vals.size(), (size_t)req_data.lens[0]) 
+    PS_CHECK(req_data.lens.size());
+    PS_CHECK_EQ(req_data.vals.size(), (size_t)req_data.lens[0]) 
         << "key=" << key << ", " << req_data.vals.size() << ", " << req_data.lens[0];
 
     if (mem_map.find(key) == mem_map.end()) {
@@ -95,7 +95,7 @@ void EmptyHandler(const KVMeta &req_meta, const KVPairs<Val> &req_data, KVServer
   }
   else {
     auto iter = mem_map.find(key);
-    CHECK_NE(iter, mem_map.end());
+    PS_CHECK_NE(iter, mem_map.end());
     server->Response(req_meta, iter->second);
   }
 }
@@ -175,8 +175,8 @@ void RunWorker(int argc, char *argv[]) {
   auto krs = ps::Postoffice::Get()->GetServerKeyRanges();
 
   const int num_servers = krs.size();
-  LOG(INFO) << num_servers << " servers in total";
-  CHECK_GT(num_servers, 0);
+  PS_LOG(INFO) << num_servers << " servers in total";
+  PS_CHECK_GT(num_servers, 0);
 
   // init
   int len = (argc > 1) ? atoi(argv[1]) : 1024000;
@@ -184,7 +184,7 @@ void RunWorker(int argc, char *argv[]) {
 
   size_t partition_bytes = Environment::Get()->find("BYTEPS_PARTITION_BYTES") ? 
       atoi(Environment::Get()->find("BYTEPS_PARTITION_BYTES")) : 4096000;
-  CHECK_GE(partition_bytes, (size_t)len) 
+  PS_CHECK_GE(partition_bytes, (size_t)len) 
       << "tensor partition is not supported in this benchmark"
       << ", try reduce tensor size or increase BYTEPS_PARTITION_BYTES";
 
@@ -251,7 +251,7 @@ int main(int argc, char *argv[]) {
   setenv("BYTEPS_LOCAL_SIZE", "1", 1);
   setenv("BYTEPS_ENABLE_IPC", "1", 1);
   // start system
-  const char* val = CHECK_NOTNULL(Environment::Get()->find("DMLC_ROLE"));
+  const char* val = PS_CHECK_NOTNULL(Environment::Get()->find("DMLC_ROLE"));
   std::string role_str(val);
   Node::Role role = GetRole(role_str);
   auto job_id_str = Environment::Get()->find("BYTEPS_JOB_ID");

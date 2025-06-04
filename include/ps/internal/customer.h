@@ -11,6 +11,7 @@
 #include <thread>
 #include <utility>
 #include <vector>
+#include <unordered_map>
 
 #include "ps/internal/message.h"
 #include "ps/internal/threadsafe_queue.h"
@@ -25,6 +26,15 @@ namespace ps {
  */
 
 class Postoffice;
+
+struct CustomerTracker {
+  std::atomic<int> count;
+  std::atomic<int> response_count;
+#ifdef STEPAF_ENABLE_TRACE
+  struct Trace request;
+  struct Trace response;
+#endif // STEPAF_ENABLE_TRACE
+};
 
 class Customer {
  public:
@@ -91,6 +101,12 @@ class Customer {
    */
   inline void Accept(const Message& recved) { recv_queue_.Push(recved); }
 
+  void DirectProcess(Message& recv);
+
+#ifdef STEPAF_ENABLE_TRACE
+  std::pair<struct Trace, struct Trace> FetchTrace(int timestamp);
+#endif // STEPAF_ENABLE_TRACE
+
  private:
   /**
    * \brief the thread function
@@ -109,8 +125,7 @@ class Customer {
 
   std::mutex tracker_mu_;
   std::condition_variable tracker_cond_;
-  std::vector<std::pair<int, int>> tracker_;
-
+  std::vector<CustomerTracker*> tracker_;
   DISALLOW_COPY_AND_ASSIGN(Customer);
 };
 

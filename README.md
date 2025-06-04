@@ -1,4 +1,7 @@
-This is the communication library for [BytePS](https://github.com/bytedance/byteps). It is designed for high performance RDMA. However, it also supports TCP.
+# StepAF
+
+StepAF is the communication library for Attention-FFN Disaggregation of Step3.
+It is designed for ultra-low-latency communication based on GPUDirect RDMA.
 
 ## Build
 
@@ -59,10 +62,10 @@ For the scheduler:
 export DMLC_ENABLE_RDMA=ibverbs
 export DMLC_NUM_WORKER=1
 export DMLC_NUM_SERVER=1 
-export DMLC_PS_ROOT_URI=10.0.0.2  # scheduler's RDMA interface IP 
+export DMLC_PS_ROOT_URI=`ip addr show brainpf0 | awk '/inet / {print $2}' | cut -d/ -f1`
 export DMLC_PS_ROOT_PORT=8123     # scheduler's port (can random choose)
-export DMLC_INTERFACE=eth5        # my RDMA interface 
-
+export DMLC_INTERFACE=brainpf0        # my RDMA interface 
+export DMLC_NODE_HOST=`ip addr show $DMLC_INTERFACE | awk '/inet / {print $2}' | cut -d/ -f1`
 # launch scheduler
 DMLC_ROLE=scheduler ./tests/test_benchmark
 ```
@@ -74,10 +77,10 @@ For the server:
 export DMLC_ENABLE_RDMA=ibverbs
 export DMLC_NUM_WORKER=1
 export DMLC_NUM_SERVER=1 
-export DMLC_PS_ROOT_URI=10.0.0.2  # scheduler's RDMA interface IP 
+export DMLC_PS_ROOT_URI=`ip addr show brainpf0 | awk '/inet / {print $2}' | cut -d/ -f1`
 export DMLC_PS_ROOT_PORT=8123     # scheduler's port (can random choose)
-export DMLC_INTERFACE=eth5        # my RDMA interface 
-
+export DMLC_INTERFACE=brainpf1        # my RDMA interface 
+export DMLC_NODE_HOST=`ip addr show $DMLC_INTERFACE | awk '/inet / {print $2}' | cut -d/ -f1`
 # launch server
 DMLC_ROLE=server ./tests/test_benchmark
 ```
@@ -88,10 +91,10 @@ For the worker:
 export DMLC_ENABLE_RDMA=ibverbs
 export DMLC_NUM_WORKER=1
 export DMLC_NUM_SERVER=1 
-export DMLC_PS_ROOT_URI=10.0.0.2  # scheduler's RDMA interface IP 
+export DMLC_PS_ROOT_URI=`ip addr show brainpf0 | awk '/inet / {print $2}' | cut -d/ -f1`
 export DMLC_PS_ROOT_PORT=8123     # scheduler's port (can random choose)
-export DMLC_INTERFACE=eth5        # my RDMA interface 
-
+export DMLC_INTERFACE=brainpf2        # my RDMA interface 
+export DMLC_NODE_HOST=`ip addr show $DMLC_INTERFACE | awk '/inet / {print $2}' | cut -d/ -f1`
 # launch worker
 DMLC_ROLE=worker ./tests/test_benchmark
 ```
@@ -138,7 +141,6 @@ DMLC_ROLE=server ./tests/test_ipc_benchmark &
 DMLC_ROLE=worker ./tests/test_ipc_benchmark 
 ```
 
-
 Note: This benchmark is only valid for RDMA. 
 
 ### 3. Other GPU-related benchmarks
@@ -148,3 +150,79 @@ Note: This benchmark is only valid for RDMA.
 cd tests;
 NODE_ONE_IP=xxx NODE_TWO_IP=yyy bash test.sh (local|remote|joint) bytes_per_msg msg_count (push_only|pull_only|push_pull) (cpu2cpu|cpu2gpu|gpu2gpu|gpu2cpu)
 ```
+
+### 4. AF benchmarks
+
+Build the AF test
+```
+make -j USE_RDMA=1 CUDA_HOME=/usr/local/cuda USE_CUDA=1
+```
+
+Run the benchmark
+- On FFN Server & Scheduler Node 
+```
+bash tests/test_benchmark_af.sh
+```
+
+- On Worker Node
+```
+bash tests/test_benchmark_af.sh x.x.x.x  
+```
+
+### 5. Bonding test
+
+Use env DMLC_SPLIT_QP_LAG for LAG configuration. 0 for auto, 1/2 for configuration while others for disable.
+
+Run Scheduler
+
+```bash
+ # script            role      nic           rank
+ ./tests/test-mqp.sh scheduler brainpf_bond0 0
+ ```
+
+Run Server
+
+```bash
+ # script            role      nic           rank
+ ./tests/test-mqp.sh server brainpf_bond0 0
+ ```
+
+
+Run Worker
+
+```bash
+ # script            role      nic           rank    lag: 0 as auto, 1/2 for config, other for disable
+ ./tests/test-mqp.sh worker brainpf_bond0    0       1
+ ```
+
+### 6. Tensor Based GDR test
+
+Build GDR Tensor Test
+```bash
+make  tensor
+ ```
+
+Run Server & Scheduler 
+```bash
+
+export BINARY=./cmake_build/tests/test_benchmark_af_tensor
+# export  BINARY=./cmake_build/tests/test_benchmark_af_verify
+ 
+bash ./tests/test_benchmark_af.sh 
+ ```
+
+Run Worker
+```bash
+
+export BINARY=./cmake_build/tests/test_benchmark_af_tensor
+# export  BINARY=./cmake_build/tests/test_benchmark_af_verify
+
+bash ./tests/test_benchmark_af.sh xx.xx.xx.xx # scheduler ip
+ ```
+
+### 7. Run UT
+
+Run utests in a GPU node with RNICs
+```bash
+bash tests/utests/run_ut.sh
+ ```

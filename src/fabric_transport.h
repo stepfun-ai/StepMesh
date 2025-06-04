@@ -214,7 +214,7 @@ struct FabricEndpoint {
 
   void Create(const std::string &hp, fi_info *info) {
     fabric_ctx = std::unique_ptr<FabricContext>(new FabricContext());
-    CHECK(fabric_ctx != nullptr);
+    PS_CHECK(fabric_ctx != nullptr);
     fabric_ctx->Init(info);
     mem_allocator.reset(new FabricMemoryAllocator());
     hostport = hp;
@@ -224,7 +224,7 @@ struct FabricEndpoint {
     // fi_av_insert: insert address vector of the remote endpoint
     int ret = fi_av_insert(fabric_ctx->av, peer_ep_name.name, 1, &peer_addr, 0,
                            nullptr);
-    CHECK_EQ(ret, 1) << "Call to fi_av_insert() failed. Return Code: " << ret
+    PS_CHECK_EQ(ret, 1) << "Call to fi_av_insert() failed. Return Code: " << ret
                      << ". ERROR: " << fi_strerror(-ret);
     // fi_av_straddr: human readable name
     FabricAddr readable_addr;
@@ -258,7 +258,7 @@ struct FabricEndpoint {
                     peer_addr, ctx->tag, 0, static_cast<void *>(ctx));
       if (ret == -FI_EAGAIN) {
         // no resources
-        LOG(WARNING) << "fi_trecv: FI_EAGAIN";
+        PS_LOG(WARNING) << "fi_trecv: FI_EAGAIN";
         continue;
       } else if (ret != 0) {
         check_err(ret, "Unable to do fi_recv message");
@@ -276,7 +276,7 @@ struct FabricEndpoint {
     for (size_t i = 0; i < num; ++i) {
       void *buf;
       aligned_malloc((void **)&buf, kFabricMempoolChunkSize);
-      CHECK(buf);
+      PS_CHECK(buf);
 
       ctx[i].tag = tag;
       ctx[i].type = type;
@@ -293,7 +293,7 @@ struct FabricEndpoint {
     for (size_t i = 0; i < num; ++i) {
       void *buf;
       aligned_malloc((void **)&buf, kFabricMempoolChunkSize);
-      CHECK(buf);
+      PS_CHECK(buf);
 
       ctx[i].tag = tag;
       ctx[i].type = type;
@@ -310,7 +310,7 @@ struct FabricEndpoint {
   }
 
   void StoreRemoteContext(FabricMessageBuffer *msg_buf, FabricWRContext *ctx) {
-    CHECK_NE(msgbuf_cache.find(msg_buf), msgbuf_cache.end());
+    PS_CHECK_NE(msgbuf_cache.find(msg_buf), msgbuf_cache.end());
     auto &msg = msgbuf_cache[msg_buf];
     auto key = msg.meta.key;
     auto is_push = msg.meta.push;
@@ -320,32 +320,32 @@ struct FabricEndpoint {
 
   CtxTuple GetRemoteContext(uint64_t key, bool is_push) {
     auto &queue = is_push ? push_context[key] : pull_context[key];
-    CHECK(!queue.empty());
+    PS_CHECK(!queue.empty());
     CtxTuple tuple = queue.front();
     queue.pop();
     return tuple;
   }
 
   void StoreMsgBuf(FabricMessageBuffer *msg_buf, Message &msg) {
-    CHECK_EQ(msgbuf_cache.find(msg_buf), msgbuf_cache.end());
+    PS_CHECK_EQ(msgbuf_cache.find(msg_buf), msgbuf_cache.end());
     msgbuf_cache[msg_buf] = msg;
   }
 
   std::pair<char *, size_t> GetPullAddr(uint64_t key) {
-    CHECK_NE(addr_cache.find(key), addr_cache.end())
+    PS_CHECK_NE(addr_cache.find(key), addr_cache.end())
         << "Cannot find key " << key << " in addr_cache";
     return addr_cache[key];
   }
 
   void StorePullAddr(Message &msg) {
     auto key = msg.meta.key;
-    CHECK_GE(msg.data.size(), 2)
+    PS_CHECK_GE(msg.data.size(), 2)
         << "Unexpected number of data: " << msg.data.size();
     addr_cache[key] = std::make_pair((char *)(msg.meta.addr), msg.meta.val_len);
   }
 
   void ReleaseFirstMsg(FabricMessageBuffer *msg_buf) {
-    CHECK_NE(msgbuf_cache.find(msg_buf), msgbuf_cache.end());
+    PS_CHECK_NE(msgbuf_cache.find(msg_buf), msgbuf_cache.end());
     PS_VLOG(6) << "Release msg_buf " << msg_buf;
     msgbuf_cache.erase(msg_buf);
   }
@@ -355,8 +355,8 @@ class FabricTransport {
  public:
   explicit FabricTransport(FabricEndpoint *endpoint,
                            FabricMemoryAllocator *allocator) {
-    endpoint_ = CHECK_NOTNULL(endpoint);
-    allocator_ = CHECK_NOTNULL(allocator);
+    endpoint_ = PS_CHECK_NOTNULL(endpoint);
+    allocator_ = PS_CHECK_NOTNULL(allocator);
     pagesize_ = sysconf(_SC_PAGESIZE);
 
     auto val = Environment::Get()->find("DMLC_ROLE");
@@ -372,7 +372,7 @@ class FabricTransport {
                           context->num_buffers, endpoint_->peer_addr,
                           context->tag, context);
       if (ret == -FI_EAGAIN) {
-        LOG(WARNING) << "fi_tsend: FI_EAGAIN";
+        PS_LOG(WARNING) << "fi_tsend: FI_EAGAIN";
       } else if (ret != 0) {
         check_err(ret, "Unable to do fi_send message");
       } else {
@@ -389,7 +389,7 @@ class FabricTransport {
 
     RendezvousMsg *req =
         reinterpret_cast<RendezvousMsg *>(context->buffers[0].iov_base);
-    CHECK(req != nullptr);
+    PS_CHECK(req != nullptr);
     req->meta_len = msg_buf->inline_len;
     req->origin_addr = reinterpret_cast<uint64_t>(msg_buf);
     req->data_num = msg_buf->data.size();
@@ -418,7 +418,7 @@ class FabricTransport {
     }
     size_t data_size = 0;
     if (req->pull_response) {
-      CHECK(req->data_num >= 2);
+      PS_CHECK(req->data_num >= 2);
     }
     if (req->data_num >= 2) {
       data_size = req->data_len[1];
@@ -430,7 +430,7 @@ class FabricTransport {
       size_t alloc_size = meta_size;
       meta_buffer = allocator_->Alloc(meta_size, &alloc_size);
       auto addr_size_pair = endpoint_->GetPullAddr(req->key);
-      CHECK_EQ(addr_size_pair.second, data_size)
+      PS_CHECK_EQ(addr_size_pair.second, data_size)
           << "Inconsistent data buffer size";
       data_buffer = addr_size_pair.first;
     } else {
@@ -438,7 +438,7 @@ class FabricTransport {
       meta_buffer = allocator_->Alloc(alloc_size, &alloc_size);
       data_buffer = meta_buffer + meta_size;
     }
-    CHECK(meta_buffer) << "Unable to allocate memory";
+    PS_CHECK(meta_buffer) << "Unable to allocate memory";
     buf_ctx->meta_buffer = meta_buffer;
     buf_ctx->data_buffer = data_buffer;
 
@@ -450,11 +450,11 @@ class FabricTransport {
 
     resp->origin_addr = req->origin_addr;
     resp->tag = addrpool.StoreAddress(buf_ctx);
-    CHECK_EQ(resp->tag, resp->tag & kDataMask) << "tag out of bound";
+    PS_CHECK_EQ(resp->tag, resp->tag & kDataMask) << "tag out of bound";
 
     FabricWRContext *recv_ctx = new FabricWRContext();
     recv_ctx->type = kReceiveWithData;
-    CHECK_NE(endpoint_, nullptr);
+    PS_CHECK_NE(endpoint_, nullptr);
     recv_ctx->tag = resp->tag;
     PrepareWRContext(recv_ctx, meta_buffer, meta_size, data_buffer, data_size);
     endpoint_->PostRecv(recv_ctx);
@@ -464,7 +464,7 @@ class FabricTransport {
 
   int RecvPushResponse(Message *msg, FabricBufferContext *buffer_ctx,
                        int meta_len) {
-    CHECK_EQ(buffer_ctx->data_num, 0);
+    PS_CHECK_EQ(buffer_ctx->data_num, 0);
     return 0;
   }
 
@@ -479,8 +479,8 @@ class FabricTransport {
 
   int RecvPushRequest(Message *msg, FabricBufferContext *buffer_ctx,
                       int meta_len) {
-    CHECK(msg->meta.push && msg->meta.request);
-    CHECK_EQ(buffer_ctx->data_num, 3);
+    PS_CHECK(msg->meta.push && msg->meta.request);
+    PS_CHECK_EQ(buffer_ctx->data_num, 3);
 
     SArray<char> keys = CreateFunctionalSarray(&msg->meta.key, sizeof(Key));
     uint32_t len = buffer_ctx->data_len[1];

@@ -1,4 +1,5 @@
 // Copyright 2019 Bytedance Inc. or its affiliates. All Rights Reserved.
+// Modifications Copyright (C) by StepAI Contributors. 2025.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -32,8 +33,13 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#ifdef DMLC_USE_CUDA
+#include <cuda_runtime.h>
+#endif
+
 #include <algorithm>
 #include <map>
+#include <mutex>
 #include <queue>
 #include <set>
 #include <string>
@@ -79,7 +85,7 @@ class MemoryAllocator {
   ~MemoryAllocator() {
     std::lock_guard<std::mutex> lk(mu_);
     for (auto &it : mr_) {
-      CHECK_EQ(ibv_dereg_mr(it.second), 0);
+      PS_CHECK_EQ(ibv_dereg_mr(it.second), 0);
       free(it.first);
     }
   }
@@ -94,11 +100,12 @@ class MemoryAllocator {
 
     char *p;
     aligned_malloc((void **)&p, size);
-    CHECK(p);
+    PS_CHECK(p);
 
-    struct ibv_mr *mr;
-    CHECK(mr = ibv_reg_mr(pd_, p, size,
-                          IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE));
+    struct ibv_mr *mr = nullptr;
+    mr = ibv_reg_mr(pd_, p, size,
+                    IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
+    PS_CHECK(mr != nullptr);
 
     std::lock_guard<std::mutex> lk(mu_);
     mr_[p] = mr;
@@ -120,7 +127,7 @@ class MemoryAllocator {
   inline struct ibv_mr *Addr2MR(char *addr) {
     std::lock_guard<std::mutex> lk(mu_);
     auto it = mr_.find(addr);
-    CHECK_NE(it, mr_.end()) << "cannot find the associated memory region";
+    PS_CHECK_NE(it, mr_.end()) << "cannot find the associated memory region";
 
     return it->second;
   }
@@ -130,6 +137,90 @@ class MemoryAllocator {
   size_t pagesize_ = sysconf(_SC_PAGESIZE);
   std::unordered_map<char *, size_t> used_list;
   std::unordered_map<char *, struct ibv_mr *> mr_;
+};
+
+class BackendMemoryAllocator {
+ public:
+  explicit BackendMemoryAllocator(struct ibv_pd* pd, int gpu_id)
+      : pd_(pd), associated_gpu_id_(gpu_id) {
+    PS_CHECK(pd_) << "Protection Domain (pd_) is null.";
+    PS_LOG(INFO) << "Initialized BackendMemoryAllocator for GPU " << gpu_id
+              << " with pd " << pd_;
+  }
+
+  ~BackendMemoryAllocator() {
+    std::lock_guard<std::mutex> lock(mu_);
+    for (auto const& it : key_to_mr_) {
+      auto mr = it.second;
+      if (mr) {
+        if (ibv_dereg_mr(mr) != 0) {
+          PS_LOG(WARNING) << "ibv_dereg_mr failed for GPU MR " << mr->handle
+                       << " on GPU " << associated_gpu_id_ << ": "
+                       << strerror(errno);
+        }
+        if (mr->addr) {
+          Backend::Get()->Free(mr->addr);
+        }
+      }
+    }
+    key_to_mr_.clear();
+  }
+
+  void* Alloc(uint64_t key, size_t requested_size) {
+    std::lock_guard<std::mutex> lock(mu_);
+    Backend::Get()->SetDevice(associated_gpu_id_);
+    auto it = key_to_mr_.find(key);
+    if (it != key_to_mr_.end()) {
+      PS_CHECK_GE(it->second->length, requested_size)
+          << "Existing buffer for key " << key << " is too small. "
+          << "Existing size: " << it->second->length
+          << ", requested size: " << requested_size;
+      return it->second->addr;
+    }
+
+    void* ptr = Backend::Get()->Alloc(requested_size);
+
+    /*cudaError_t cuda_err = cudaMalloc(&ptr, requested_size);
+    if (cuda_err != cudaSuccess) {
+      PS_LOG(FATAL) << "cudaMalloc failed for GPU " << associated_gpu_id_
+                 << " size " << requested_size << " for key " << key << ": "
+                 << cudaGetErrorString(cuda_err);
+    }*/
+
+    struct ibv_mr* mr =
+        ibv_reg_mr(pd_, ptr, requested_size,
+                   IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
+    if (!mr) {
+      Backend::Get()->Free(ptr);
+      PS_LOG(FATAL) << "ibv_reg_mr failed for memory on GPU "
+                    << associated_gpu_id_ << " for key " << key
+                    << " size " << requested_size << ": " << strerror(errno);
+    }
+
+    key_to_mr_.emplace(key, mr);
+    PS_VLOG(2) << "Allocated new GPU buffer for key=" << key << " addr=" << ptr
+               << " size=" << requested_size;
+
+    return ptr;
+  }
+
+  uint32_t GetRemoteKey(uint64_t key) {
+    std::lock_guard<std::mutex> lock(mu_);
+    auto it = key_to_mr_.find(key);
+    if (it == key_to_mr_.end()) {
+      PS_LOG(ERROR) << "Key " << key << " not found in allocator for GetRemoteKey.";
+      return 0;
+    }
+    PS_CHECK(it->second) << "MR is null for GPU buffer with key " << key;
+    return it->second->rkey;
+  }
+
+ private:
+  struct ibv_pd* pd_ = nullptr;
+  std::mutex mu_;
+  int associated_gpu_id_ = -1;
+
+  std::unordered_map<uint64_t, struct ibv_mr*> key_to_mr_;
 };
 
 struct WRContext {
@@ -143,20 +234,32 @@ struct RendezvousStart {
   uint64_t data_num;
   uint64_t data_len[kMaxDataFields];
   uint64_t origin_addr;
+  uint64_t key;
 };
 
 struct RendezvousReply {
+#ifdef STEPAF_USE_GDR
+  uint64_t meta_addr;
+  uint32_t meta_rkey;
+  uint64_t data_addr;
+  uint32_t data_rkey;
+#else
   uint64_t addr;
-  uint64_t origin_addr;
   uint32_t rkey;
+#endif // STEPAF_USE_GDR
+  uint64_t origin_addr;
   uint32_t idx;
 };
 
 struct BufferContext {
-  char *buffer;
-  size_t meta_len;
-  size_t data_num;
-  size_t data_len[kMaxDataFields];
+  char* buffer = nullptr; // Original buffer, for non-GDR or client-side GDR
+#ifdef STEPAF_USE_GDR
+  char* meta_buffer = nullptr;   // For server-side GDR meta
+  void* gpu_data_buffer = nullptr; // For server-side GDR data
+#endif
+  int meta_len = 0;
+  size_t data_num = 0;
+  size_t data_len[kMaxDataFields] = {0};
 };
 
 typedef std::unique_ptr<struct ibv_mr, std::function<void(struct ibv_mr *)>>
@@ -176,7 +279,15 @@ struct RequestContext {
 };
 
 // <remote_addr, rkey, idx, local_addr>
+#ifdef STEPAF_USE_GDR
+// <meta_addr, meta_rkey, data_addr, data_rkey, idx, local_addr>
+typedef std::tuple<uint64_t, uint32_t, uint64_t, uint32_t, uint32_t,
+                   MessageBuffer *>
+    RemoteTuple;
+#else
+// <remote_addr, rkey, idx, local_addr>
 typedef std::tuple<uint64_t, uint32_t, uint32_t, MessageBuffer *> RemoteTuple;
+#endif // STEPAF_USE_GDR
 
 // recver, <remote_addr, rkey, idx>
 typedef std::unordered_map<int, RemoteTuple> RemoteAndLocalAddress;

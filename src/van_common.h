@@ -47,8 +47,8 @@ static inline void aligned_malloc(void **ptr, size_t size) {
   void *p;
   int size_aligned = ROUNDUP(size, page_size);
   int ret = posix_memalign(&p, page_size, size_aligned);
-  CHECK_EQ(ret, 0) << "posix_memalign error: " << strerror(ret);
-  CHECK(p);
+  PS_CHECK_EQ(ret, 0) << "posix_memalign error: " << strerror(ret);
+  PS_CHECK(p);
   memset(p, 0, size);
   *ptr = p;
 }
@@ -89,7 +89,7 @@ class AddressPool {
   T *GetAddressAndRelease(uint32_t index) {
     std::lock_guard<std::mutex> lk(mu_);
     T *ptr = table_[index];
-    CHECK(ptr);
+    PS_CHECK(ptr);
     indices_.push(index);
     table_[index] = nullptr;
     return ptr;
@@ -98,19 +98,19 @@ class AddressPool {
   // TODO: make the address pool size dynamic
   T *GetAddress(uint32_t index) {
     std::lock_guard<std::mutex> lk(mu_);
-    return CHECK_NOTNULL(table_[index]);
+    return PS_CHECK_NOTNULL(table_[index]);
   }
 
   uint32_t StoreAddress(T *ptr) {
     std::lock_guard<std::mutex> lk(mu_);
-    CHECK(ptr);
-    CHECK(!indices_.empty())
+    PS_CHECK(ptr);
+    PS_CHECK(!indices_.empty())
         << "Address pool size is too small, "
         << "current size is " << kMaxEntries
         << ", consider increasing BYTEPS_ADDRESS_POOL_SIZE";
     uint32_t idx = indices_.front();
     indices_.pop();
-    CHECK_EQ(table_[idx], nullptr) << idx;
+    PS_CHECK_EQ(table_[idx], nullptr) << idx;
     table_[idx] = ptr;
     return idx;
   }

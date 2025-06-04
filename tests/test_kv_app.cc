@@ -47,12 +47,12 @@ void RunWorker() {
   for (int i = 0; i < num; ++i) {
     res += std::fabs(rets[i] - vals[i] * repeat);
   }
-  CHECK_LT(res / repeat, 1e-5);
+  PS_CHECK_LT(res / repeat, 1e-5);
   LL << "error: " << res / repeat;
 }
 
 int main(int argc, char *argv[]) {
-  const char* val = CHECK_NOTNULL(Environment::Get()->find("DMLC_ROLE"));
+  const char* val = PS_CHECK_NOTNULL(Environment::Get()->find("DMLC_ROLE"));
   std::string role_str(val);
   Node::Role role = GetRole(role_str);
   // start system

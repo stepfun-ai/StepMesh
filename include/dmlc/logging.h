@@ -14,6 +14,7 @@
 #include <vector>
 #include <memory>
 #include "./base.h"
+#include "ps/internal/utils.h"
 
 #if DMLC_LOG_STACK_TRACE
 #include <cxxabi.h>
@@ -71,63 +72,74 @@ inline void InitLogging(const char *argv0) {
 }
 
 // Always-on checking
-#define CHECK(x)                                                      \
+#define PS_CHECK(x)                                                      \
   if (!(x))                                                           \
   dmlc::LogMessageFatal(__FILE__, __LINE__).stream() << "Check "      \
                                                         "failed: " #x \
                                                      << ' '
-#define CHECK_LT(x, y) CHECK((x) < (y))
-#define CHECK_GT(x, y) CHECK((x) > (y))
-#define CHECK_LE(x, y) CHECK((x) <= (y))
-#define CHECK_GE(x, y) CHECK((x) >= (y))
-#define CHECK_EQ(x, y) CHECK((x) == (y))
-#define CHECK_NE(x, y) CHECK((x) != (y))
-#define CHECK_NOTNULL(x)                                                                 \
+#define PS_CHECK_LT(x, y) PS_CHECK((x) < (y))
+#define PS_CHECK_GT(x, y) PS_CHECK((x) > (y))
+#define PS_CHECK_LE(x, y) PS_CHECK((x) <= (y))
+#define PS_CHECK_GE(x, y) PS_CHECK((x) >= (y))
+#define PS_CHECK_EQ(x, y) PS_CHECK((x) == (y))
+#define PS_CHECK_NE(x, y) PS_CHECK((x) != (y))
+#define PS_CHECK_NOTNULL(x)                                                                 \
   ((x) == NULL                                                                           \
    ? dmlc::LogMessageFatal(__FILE__, __LINE__).stream() << "Check  notnull: " #x << ' ', \
    (x) : (x))  // NOLINT(*)
 // Debug-only checking.
 #ifdef NDEBUG
-#define DCHECK(x) \
-  while (false) CHECK(x)
-#define DCHECK_LT(x, y) \
-  while (false) CHECK((x) < (y))
-#define DCHECK_GT(x, y) \
-  while (false) CHECK((x) > (y))
-#define DCHECK_LE(x, y) \
-  while (false) CHECK((x) <= (y))
-#define DCHECK_GE(x, y) \
-  while (false) CHECK((x) >= (y))
-#define DCHECK_EQ(x, y) \
-  while (false) CHECK((x) == (y))
-#define DCHECK_NE(x, y) \
-  while (false) CHECK((x) != (y))
+/* 
+#define DPS_CHECK(x) \
+  while (false) PS_CHECK(x)
+#define DPS_CHECK_LT(x, y) \
+  while (false) PS_CHECK((x) < (y))
+#define DPS_CHECK_GT(x, y) \
+  while (false) PS_CHECK((x) > (y))
+#define DPS_CHECK_LE(x, y) \
+  while (false) PS_CHECK((x) <= (y))
+#define DPS_CHECK_GE(x, y) \
+  while (false) PS_CHECK((x) >= (y))
+#define DPS_CHECK_EQ(x, y) \
+  while (false) PS_CHECK((x) == (y))
+#define DPS_CHECK_NE(x, y) \
+  while (false) PS_CHECK((x) != (y))
 #else
-#define DCHECK(x) CHECK(x)
-#define DCHECK_LT(x, y) CHECK((x) < (y))
-#define DCHECK_GT(x, y) CHECK((x) > (y))
-#define DCHECK_LE(x, y) CHECK((x) <= (y))
-#define DCHECK_GE(x, y) CHECK((x) >= (y))
-#define DCHECK_EQ(x, y) CHECK((x) == (y))
-#define DCHECK_NE(x, y) CHECK((x) != (y))
+#define DPS_CHECK(x) PS_CHECK(x)
+#define DPS_CHECK_LT(x, y) PS_CHECK((x) < (y))
+#define DPS_CHECK_GT(x, y) PS_CHECK((x) > (y))
+#define DPS_CHECK_LE(x, y) PS_CHECK((x) <= (y))
+#define DPS_CHECK_GE(x, y) PS_CHECK((x) >= (y))
+#define DPS_CHECK_EQ(x, y) PS_CHECK((x) == (y))
+#define DPS_CHECK_NE(x, y) PS_CHECK((x) != (y)) */
 #endif  // NDEBUG
 
-#define LOG_INFO dmlc::LogMessage(__FILE__, __LINE__)
-#define LOG_ERROR LOG_INFO
-#define LOG_WARNING LOG_INFO
+#define PS_LOG_API dmlc::LogMessage(__FILE__, __LINE__)
+
+#define PS_LOG_IF(severity, condition) \
+  !(condition) ? (void)0 : dmlc::LogMessageVoidify() & PS_LOG_API
+
 #define LOG_FATAL dmlc::LogMessageFatal(__FILE__, __LINE__)
+#define PS_LOG_FATAL LOG_FATAL.stream()
 #define LOG_QFATAL LOG_FATAL
 
-// Poor man version of VLOG
-#define VLOG(x) LOG_INFO.stream()
 
-#define LOG(severity) LOG_##severity.stream()
-#define LG LOG_INFO.stream()
-#define LOG_IF(severity, condition) \
-  !(condition) ? (void)0 : dmlc::LogMessageVoidify() & LOG(severity)
+#define PS_VLOG(x) PS_LOG_IF(INFO, x <= PS_VERBOSE).stream()
+
+#define PS_LOG_ERROR   PS_VLOG(0)
+#define PS_LOG_FATAL   LOG_FATAL.stream()
+#define PS_LOG_WARNING PS_VLOG(0)
+#define PS_LOG_INFO    PS_VLOG(1)
+#define PS_LOG_TRACE   PS_VLOG(2)
+#define PS_LOG_ALL     PS_VLOG(3)
+
+#define PS_LOG(severity) PS_LOG_##severity
+
+#define PS_LG LOG_INFO.stream()
 
 #ifdef NDEBUG
-#define LOG_DFATAL LOG_ERROR
+/*
+#define LOG_DFATAL PS_LOG_ERROR
 #define DFATAL ERROR
 #define DLOG(severity) true ? (void)0 : dmlc::LogMessageVoidify() & LOG(severity)
 #define DLOG_IF(severity, condition) \
@@ -136,8 +148,11 @@ inline void InitLogging(const char *argv0) {
 #define LOG_DFATAL LOG_FATAL
 #define DFATAL FATAL
 #define DLOG(severity) LOG(severity)
-#define DLOG_IF(severity, condition) LOG_IF(severity, condition)
+#define DLOG_IF(severity, condition) PS_LOG_IF(severity, condition)
+*/
 #endif
+
+
 
 // Poor man version of LOG_EVERY_N
 #define LOG_EVERY_N(severity, n) LOG(severity)
@@ -175,7 +190,8 @@ class LogMessage {
         log_stream_(std::cerr)
 #endif
   {
-    log_stream_ << "[" << pretty_date_.HumanDate() << "] " << file << ":" << line << ": ";
+    log_stream_ << "[" << pretty_date_.HumanDate() << "] "
+                << getenv("DMLC_ROLE") << " " << file << ":" << line << ": ";
   }
   ~LogMessage() { log_stream_ << "\n"; }
   std::ostream &stream() { return log_stream_; }
@@ -273,7 +289,7 @@ class LogMessageFatal {
     // throwing out of destructor is evil
     // hopefully we can do it here
     // also log the message before throw
-    LOG(ERROR) << log_stream_.str();
+    PS_LOG_API.stream() << log_stream_.str();
     throw Error(log_stream_.str());
   }
 

@@ -71,7 +71,7 @@ class FabricVan : public Van {
 
     // set hints for capacity and modes, create fabric, domain and cq
     hints = fi_allocinfo();
-    CHECK(hints != nullptr) << "Failed to allocate hints";
+    PS_CHECK(hints != nullptr) << "Failed to allocate hints";
 
     // hints to filter providers
     hints->ep_attr->type = FI_EP_RDM;
@@ -89,11 +89,11 @@ class FabricVan : public Van {
 
     // fi_getinfo
     ret = fi_getinfo(fi_version, nullptr, 0, 0, hints, &info_);
-    CHECK_NE(ret, -FI_ENODATA) << "Could not find any optimal provider";
+    PS_CHECK_NE(ret, -FI_ENODATA) << "Could not find any optimal provider";
     check_err(ret, "fi_getinfo failed");
     struct fi_info *providers = info_;
     while (providers) {
-      LOG(INFO) << "Found a fabric provider "
+      PS_LOG(INFO) << "Found a fabric provider "
                 << providers->fabric_attr->prov_name;
       providers = providers->next;
     }
@@ -111,7 +111,7 @@ class FabricVan : public Van {
 
     auto val = Environment::Get()->find("DMLC_ROLE");
     std::string role(val);
-    LOG(INFO) << "This is a " << role;
+    PS_LOG(INFO) << "This is a " << role;
 
     start_mu_.unlock();
 
@@ -135,7 +135,7 @@ class FabricVan : public Van {
         // only customer 0 would call this method
         exit.meta.customer_id = 0;
         int ret = zmq_->SendMsg(exit);
-        CHECK_NE(ret, -1);
+        PS_CHECK_NE(ret, -1);
       }
     }
 
@@ -160,7 +160,7 @@ class FabricVan : public Van {
   }
 
   int Bind(Node &node, int max_retry) override {
-    CHECK_EQ(my_node_.num_ports, 1)
+    PS_CHECK_EQ(my_node_.num_ports, 1)
         << "fabric van does not support multiple ports";
     std::lock_guard<std::mutex> lk(endpoints_mu_);
     int my_port = zmq_->Bind(node, max_retry);
@@ -171,9 +171,9 @@ class FabricVan : public Van {
   }
 
   void Connect(const Node &node) override {
-    CHECK_NE(node.id, node.kEmpty);
-    CHECK_NE(node.port, node.kEmpty);
-    CHECK(node.hostname.size());
+    PS_CHECK_NE(node.id, node.kEmpty);
+    PS_CHECK_NE(node.port, node.kEmpty);
+    PS_CHECK(node.hostname.size());
 
     PS_VLOG(3) << "Connect: " << node.DebugString() << " from "
                << my_node_.DebugString();
@@ -223,10 +223,10 @@ class FabricVan : public Van {
   int SendMsg(Message &msg) override {
     int remote_id = msg.meta.recver;
     PS_VLOG(3) << "SendMsg: " << msg.DebugString() << " to node " << remote_id;
-    CHECK_NE(remote_id, Node::kEmpty);
+    PS_CHECK_NE(remote_id, Node::kEmpty);
 
     endpoints_mu_.lock();
-    CHECK_NE(endpoints_.find(remote_id), endpoints_.end())
+    PS_CHECK_NE(endpoints_.find(remote_id), endpoints_.end())
         << remote_id << " v.s. " << EndpointsDebugStr();
     FabricEndpoint *endpoint = endpoints_[remote_id];
     endpoints_mu_.unlock();
@@ -234,7 +234,7 @@ class FabricVan : public Van {
     int meta_len = GetPackMetaLen(msg.meta);
     size_t data_len = msg.meta.data_size;
     size_t total_len = meta_len + data_len;
-    CHECK(meta_len);
+    PS_CHECK(meta_len);
 
     // pack meta info
     if (IsValidPushpull(msg)) {
@@ -263,7 +263,7 @@ class FabricVan : public Van {
     int total_len = 0;
     total_len += meta_len;
 
-    auto trans = CHECK_NOTNULL(endpoint->GetTransport());
+    auto trans = PS_CHECK_NOTNULL(endpoint->GetTransport());
 
     // PrintRecvLog(msg, buffer_ctx, meta_len);
 
@@ -278,7 +278,7 @@ class FabricVan : public Van {
     // valid data message
     if (msg->meta.push && msg->meta.request) {
       // push request
-      CHECK_NE(msg->meta.sender, Node::kEmpty);
+      PS_CHECK_NE(msg->meta.sender, Node::kEmpty);
       total_len += trans->RecvPushRequest(msg, buffer_ctx, meta_len);
       // StoreWorkerTensorAddress(msg);
     } else if (!msg->meta.push && msg->meta.request) {
@@ -286,13 +286,13 @@ class FabricVan : public Van {
       total_len += trans->RecvPullRequest(msg, buffer_ctx, meta_len);
     } else if (msg->meta.push && !msg->meta.request) {
       // push response
-      CHECK_NE(msg->meta.sender, Node::kEmpty);
+      PS_CHECK_NE(msg->meta.sender, Node::kEmpty);
       total_len += trans->RecvPushResponse(msg, buffer_ctx, meta_len);
     } else if (!msg->meta.push && !msg->meta.request) {
       // pull response
       total_len += trans->RecvPullResponse(msg, buffer_ctx, meta_len);
     } else {
-      CHECK(0) << "unknown msg type";
+      PS_CHECK(0) << "unknown msg type";
     }
 
     if (should_stop_.load()) {
@@ -370,7 +370,7 @@ class FabricVan : public Van {
     if (msg.data.size() != 0) {
       // pull response / push request : size = 3
       // push response / pull request : size = 2
-      CHECK_GE(msg.data.size(), 2)
+      PS_CHECK_GE(msg.data.size(), 2)
           << "Unexpected number of data: " << msg.data.size();
       data_buff = static_cast<char *>(msg.data[1].data());
       data_size = msg.data[1].size();
@@ -384,7 +384,7 @@ class FabricVan : public Van {
       msg.meta.key = DecodeKey(msg.data[0]);
       // push request
       if (msg.meta.push) {
-        CHECK_EQ(msg.data.size(), 3) << msg.data.size();
+        PS_CHECK_EQ(msg.data.size(), 3) << msg.data.size();
         msg.meta.val_len = msg.data[1].size();
       }
     }
@@ -410,7 +410,7 @@ class FabricVan : public Van {
         endpoint->PostRecv(context);
         break;
       default:
-        CHECK(0);
+        PS_CHECK(0);
     }
   }
 
@@ -418,9 +418,9 @@ class FabricVan : public Van {
     struct fi_cq_err_entry err_entry;
     int ret = fi_cq_readerr(cq, &err_entry, 1);
     if (ret == FI_EADDRNOTAVAIL) {
-      LOG(WARNING) << "fi_cq_readerr: FI_EADDRNOTAVAIL";
+      PS_LOG(WARNING) << "fi_cq_readerr: FI_EADDRNOTAVAIL";
     } else if (ret < 0) {
-      LOG(FATAL) << "fi_cq_readerr failed. Return Code: " << ret << ". ERROR: "
+      PS_LOG(FATAL) << "fi_cq_readerr failed. Return Code: " << ret << ". ERROR: "
                  << fi_cq_strerror(cq, err_entry.prov_errno, err_entry.err_data,
                                    nullptr, err_entry.err_data_size);
     } else {
@@ -452,17 +452,17 @@ class FabricVan : public Van {
     bool is_tagged = flags & FI_TAGGED;
     bool is_send = flags & FI_SEND;
     bool is_recv = flags & FI_RECV;
-    CHECK(is_tagged) << "Completion events must be tagged";
+    PS_CHECK(is_tagged) << "Completion events must be tagged";
     uint64_t tag = cq_entry.tag;
 
     // op_context is the local context
     PS_VLOG(5) << EntryDebugStr(cq_entry);
     FabricWRContext *context =
         static_cast<FabricWRContext *>(cq_entry.op_context);
-    CHECK_NE(context, nullptr)
+    PS_CHECK_NE(context, nullptr)
         << "FabricWRContext should not be null: " << context;
 
-    CHECK_EQ(context->buffers[0].iov_base, cq_entry.buf)
+    PS_CHECK_EQ(context->buffers[0].iov_base, cq_entry.buf)
         << "buffer address does not match";
     bool start_msg = (tag == kRendezvousStartMask);
     bool reply_msg = (tag == kRendezvousReplyMask);
@@ -475,7 +475,7 @@ class FabricVan : public Van {
         // kRendezvousStart
         RendezvousMsg *req =
             static_cast<RendezvousMsg *>(context->buffers[0].iov_base);
-        auto trans = CHECK_NOTNULL(endpoint->GetTransport());
+        auto trans = PS_CHECK_NOTNULL(endpoint->GetTransport());
         trans->SendRendezvousReply(req, endpoint->addr_pool);
         ReleaseWRContext(context, endpoint);
       } else if (data_msg) {
@@ -491,7 +491,7 @@ class FabricVan : public Van {
         uint64_t origin_addr = req->origin_addr;
         FabricMessageBuffer *msg_buf =
             reinterpret_cast<FabricMessageBuffer *>(origin_addr);
-        CHECK(msg_buf != nullptr);
+        PS_CHECK(msg_buf != nullptr);
 
         FabricWRContext *send_context = msg_buf->reserved_context;
         // now we know which tag to use to reach the peer
@@ -501,13 +501,13 @@ class FabricVan : public Van {
 
         // PrintSendLog(*msg, msg_buf, addr_tuple);
 
-        auto trans = CHECK_NOTNULL(endpoint->GetTransport());
+        auto trans = PS_CHECK_NOTNULL(endpoint->GetTransport());
         trans->Send(send_context);
 
         ReleaseWRContext(context, endpoint);
       }
     } else {
-      LOG(FATAL) << "unknown completion entry" << flags;
+      PS_LOG(FATAL) << "unknown completion entry" << flags;
     }
   }
 
@@ -520,7 +520,7 @@ class FabricVan : public Van {
       // initialize context
       std::lock_guard<std::mutex> lk(endpoints_mu_);
       endpoint = worker_endpoints_[hostport].get();
-      CHECK(endpoint != nullptr);
+      PS_CHECK(endpoint != nullptr);
 
       // init fabric_ctx
       PS_VLOG(3) << "Initializing a fabric endpoint";
@@ -561,7 +561,7 @@ class FabricVan : public Van {
     Message msg;
     endpoint->send_queue.WaitAndPop(&msg);
     int meta_len = GetPackMetaLen(msg.meta);
-    auto trans = CHECK_NOTNULL(endpoint->GetTransport());
+    auto trans = PS_CHECK_NOTNULL(endpoint->GetTransport());
     // start rendezvous if no remote info
     if (!IsValidPushpull(msg)) {
       FabricMessageBuffer *msg_buf = PrepareNewMsgBuf(msg, endpoint);
@@ -588,8 +588,8 @@ class FabricVan : public Van {
         std::get<1>(context_tuple);  // local message buffer
 
     // prepare new meta and data
-    CHECK_EQ(msg_buf->inline_len, (size_t)meta_len);
-    CHECK(msg_buf->inline_buf);
+    PS_CHECK_EQ(msg_buf->inline_len, (size_t)meta_len);
+    PS_CHECK(msg_buf->inline_buf);
     msg_buf->data = msg.data;  // may not need this
 
     // the meta data might change. e.g. timestamp
@@ -612,7 +612,7 @@ class FabricVan : public Van {
     } else if (ret < 0) {
       check_err(ret, "fi_cq_read failed");
     } else {
-      CHECK_NE(ret, 0) << "at least one completion event is expected";
+      PS_CHECK_NE(ret, 0) << "at least one completion event is expected";
       PS_VLOG(3) << ret << " completion events ... ";
       for (int i = 0; i < ret; ++i) {
         const auto &cq_entry = cq_entries[i];
@@ -643,9 +643,9 @@ class FabricVan : public Van {
     while (true) {
       Message msg;
       int recv_bytes = zmq_->RecvMsg(&msg);
-      CHECK_NE(recv_bytes, -1) << "unexpected message size " << recv_bytes;
+      PS_CHECK_NE(recv_bytes, -1) << "unexpected message size " << recv_bytes;
       PS_VLOG(3) << "zmq recv: " << msg.DebugString();
-      CHECK(!msg.meta.control.empty()) << "msg.meta.control is empty";
+      PS_CHECK(!msg.meta.control.empty()) << "msg.meta.control is empty";
       auto &ctrl = msg.meta.control;
       if (ctrl.cmd == Control::ADDR_REQUEST) {
         OnConnectRequest(msg);
@@ -654,7 +654,7 @@ class FabricVan : public Van {
       } else if (ctrl.cmd == Control::TERMINATE) {
         break;
       } else {
-        LOG(FATAL) << "Drop unknown typed message " << msg.DebugString();
+        PS_LOG(FATAL) << "Drop unknown typed message " << msg.DebugString();
       }
     }
     PS_VLOG(1) << "EventPollingThread exited";
@@ -668,7 +668,7 @@ class FabricVan : public Van {
     {
       std::lock_guard<std::mutex> lk(endpoints_mu_);
       if (workers_.find(hostport) == workers_.end()) {
-        CHECK(worker_endpoints_.find(hostport) == worker_endpoints_.end());
+        PS_CHECK(worker_endpoints_.find(hostport) == worker_endpoints_.end());
         worker_endpoints_[hostport].reset(new FabricEndpoint());
         auto thread =
             new std::thread(&FabricVan::WorkerThread, this, host, port, role);
@@ -676,7 +676,7 @@ class FabricVan : public Van {
       }
       endpoint = worker_endpoints_[hostport].get();
     }
-    CHECK(endpoint != nullptr);
+    PS_CHECK(endpoint != nullptr);
     // wait for endpoint context to be initialized
     {
       std::unique_lock<std::mutex> lk(endpoint->status_mu);
@@ -730,7 +730,7 @@ class FabricVan : public Van {
       endpoint = worker_endpoints_[hostport].get();
       endpoints_[node_id] = endpoint;
     }
-    CHECK(endpoint != nullptr);
+    PS_CHECK(endpoint != nullptr);
     endpoint->SetPeerAddr(addr_info.endpoint_name, addr_info.endpoint_name_len);
     {
       std::lock_guard<std::mutex> lk(endpoint->status_mu);

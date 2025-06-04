@@ -1,6 +1,7 @@
 /**
  *  Copyright (c) 2015 by Contributors
  *  Modifications Copyright (C) Mellanox Technologies Ltd. 2020.
+ *  Modifications Copyright (C) by StepAI Contributors. 2025.
  */
 // clang-format off
 #include "ps/internal/van.h"
@@ -8,7 +9,6 @@
 
 #include <string.h>
 
-#include <chrono>
 #include <fstream>
 #include <set>
 #include <sstream>
@@ -50,7 +50,7 @@ Van *Van::Create(const std::string &type, Postoffice *postoffice) {
   val = Environment::Get()->find("ENABLE_PROFILING");
   is_van_profiling_ = val ? atoi(val) : false;
   if (is_van_profiling_) {
-    LOG(INFO) << "Van: Enable profiling.";
+    PS_LOG(INFO) << "Van: Enable profiling.";
     std::string sysvar = "";
     if (getenv("PROFILE_PATH") != nullptr)
       sysvar = std::string(getenv("PROFILE_PATH"));
@@ -88,8 +88,8 @@ Van *Van::Create(const std::string &type, Postoffice *postoffice) {
   } else if (type == "ibverbs") {
     return new RDMAVan(postoffice);
   } else if (type == "1") {
-    LOG(INFO) << "Creating RDMAVan.";
-    LOG(WARNING) << "DMLC_ENABLE_RDMA=1 will be deprecated. "
+    PS_LOG(INFO) << "Creating RDMAVan.";
+    PS_LOG(WARNING) << "DMLC_ENABLE_RDMA=1 will be deprecated. "
                  << "Please use DMLC_ENABLE_RDMA=ibverbs instead.";
     return new RDMAVan(postoffice);
 #endif
@@ -106,7 +106,7 @@ Van *Van::Create(const std::string &type, Postoffice *postoffice) {
     return new TPVan(postoffice);
 #endif
   } else {
-    LOG(FATAL) << "unsupported van type: " << type;
+    PS_LOG(FATAL) << "unsupported van type: " << type;
     return nullptr;
   }
 }
@@ -128,7 +128,7 @@ void Van::ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes,
                           ? atoi(getenv("BYTEPS_ENABLE_MIXED_MODE"))
                           : false;
     bool sparse_mode = getenv("BYTEPS_ORDERED_HOSTS") ? true : false;
-    CHECK_NE(mixed_mode && sparse_mode, true)
+    PS_CHECK_NE(mixed_mode && sparse_mode, true)
         << "BYTEPS_ENABLE_MIXED_MODE and BYTEPS_ORDERED_HOSTS should not "
            "coexist";
 
@@ -136,7 +136,7 @@ void Van::ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes,
       std::unordered_map<std::string, size_t> ip_cnt;
       for (auto &node : nodes->control.node) {
         ip_cnt[node.hostname] += 1;
-        CHECK_LE(ip_cnt[node.hostname], 2) << node.hostname;
+        PS_CHECK_LE(ip_cnt[node.hostname], 2) << node.hostname;
       }
 
       // put non-colocate servers' IP to front
@@ -154,7 +154,7 @@ void Van::ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes,
             node.hostname + ":" + std::to_string(node.port);
         if (ip_cnt[node.hostname] == 1) {
           PS_VLOG(1) << "Non-Colocate Server: " << node_host_ip;
-          CHECK_EQ(node.role, Node::SERVER);
+          PS_CHECK_EQ(node.role, Node::SERVER);
         } else {
           PS_VLOG(1) << "Colocated "
                      << ((node.role == Node::SERVER) ? "Server" : "Worker")
@@ -163,7 +163,7 @@ void Van::ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes,
       }
     } else if (sparse_mode) {
       PS_VLOG(1) << "Assign the rank as the same order in BYTEPS_ORDERED_HOSTS";
-      CHECK(getenv("BYTEPS_ORDERED_HOSTS"))
+      PS_CHECK(getenv("BYTEPS_ORDERED_HOSTS"))
           << "\n should set it as a list of IP:port (port is optional) "
              "concatenated by comma "
           << "\n an example: BYTEPS_ORDERED_HOSTS=10.0.0.1:1234,10.0.0.2:4321";
@@ -180,7 +180,7 @@ void Van::ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes,
       std::unordered_map<std::string, size_t> ip_pos;
       for (size_t i = 0; i < hosts_list.size(); ++i) {
         std::string ip = hosts_list[i].substr(0, hosts_list[i].find(":"));
-        CHECK_EQ(ip_pos.find(ip), ip_pos.end())
+        PS_CHECK_EQ(ip_pos.find(ip), ip_pos.end())
             << "\nDuplicate IP found in BYTEPS_ORDERED_HOSTS: " << ip;
         ip_pos[ip] = i;
       }
@@ -204,7 +204,7 @@ void Van::ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes,
     bool with_preferred_rank = false;
     for (auto &node : nodes->control.node) {
       if (node.aux_id != -1) {
-        LOG(INFO) << "rank detected for node " << node.DebugString();
+        PS_LOG(INFO) << "rank detected for node " << node.DebugString();
         with_preferred_rank = true;
       }
     }
@@ -215,30 +215,30 @@ void Van::ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes,
       std::unordered_set<int> worker_ranks;
       for (auto &node : nodes->control.node) {
         if (node.role == Node::SERVER) {
-          CHECK_EQ(server_ranks.find(node.aux_id), server_ranks.end())
+          PS_CHECK_EQ(server_ranks.find(node.aux_id), server_ranks.end())
               << "rank must be unique: " << node.DebugString();
           server_ranks.insert(node.aux_id);
         } else if (node.role == Node::WORKER) {
-          CHECK_EQ(worker_ranks.find(node.aux_id), worker_ranks.end())
+          PS_CHECK_EQ(worker_ranks.find(node.aux_id), worker_ranks.end())
               << "rank must be unique: " << node.DebugString();
           worker_ranks.insert(node.aux_id);
         } else {
-          LOG(FATAL) << "unrecognized node role " << node.DebugString();
+          PS_LOG(FATAL) << "unrecognized node role " << node.DebugString();
         }
       }
 
       // check continousity
       int num_servers = Postoffice::Get()->num_server_instances();
       for (int i = 0; i < num_servers; ++i) {
-        CHECK(server_ranks.find(i) != server_ranks.end()) << i;
+        PS_CHECK(server_ranks.find(i) != server_ranks.end()) << i;
       }
-      CHECK(server_ranks.size() == (size_t)num_servers);
+      PS_CHECK(server_ranks.size() == (size_t)num_servers);
 
       int num_workers = Postoffice::Get()->num_worker_instances();
       for (int i = 0; i < num_workers; ++i) {
-        CHECK(worker_ranks.find(i) != worker_ranks.end()) << i;
+        PS_CHECK(worker_ranks.find(i) != worker_ranks.end()) << i;
       }
-      CHECK(worker_ranks.size() == (size_t)num_workers);
+      PS_CHECK(worker_ranks.size() == (size_t)num_workers);
     }
 
     // assign node rank
@@ -254,7 +254,7 @@ void Van::ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes,
                                                             : num_workers_);
       }
       if (connected_nodes_.find(node_host_ip) == connected_nodes_.end()) {
-        CHECK_EQ(node.id, Node::kEmpty);
+        PS_CHECK_EQ(node.id, Node::kEmpty);
         PS_VLOG(1) << "assign id=" << id << " to node " << node.DebugString();
         node.id = id;
         Connect(node);
@@ -286,7 +286,7 @@ void Van::ProcessAddNodeCommandAtScheduler(Message *msg, Meta *nodes,
     auto dead_nodes = postoffice_->GetDeadNodes(heartbeat_timeout_);
     std::unordered_set<int> dead_set(dead_nodes.begin(), dead_nodes.end());
     // send back the recovery node
-    CHECK_EQ(recovery_nodes->control.node.size(), 1);
+    PS_CHECK_EQ(recovery_nodes->control.node.size(), 1);
     Connect(recovery_nodes->control.node[0]);
     postoffice_->UpdateHeartbeat(recovery_nodes->control.node[0].id, t);
     Message back;
@@ -317,13 +317,13 @@ void Van::UpdateLocalID(Message *msg, std::unordered_set<int> *deadnodes_set,
       postoffice_->num_server_instances() + postoffice_->num_worker_instances();
   // assign an id
   if (msg->meta.sender == Meta::kEmpty) {
-    CHECK(is_scheduler_);
-    CHECK_EQ(ctrl.node.size(), 1);
+    PS_CHECK(is_scheduler_);
+    PS_CHECK_EQ(ctrl.node.size(), 1);
     if (static_cast<int>(nodes->control.node.size()) < (int)num_nodes) {
       nodes->control.node.push_back(ctrl.node[0]);
     } else {
       // some node dies and restarts
-      CHECK(ready_.load());
+      PS_CHECK(ready_.load());
       for (size_t i = 0; i < nodes->control.node.size() - 1; ++i) {
         const auto &node = nodes->control.node[i];
         if (deadnodes_set->find(node.id) != deadnodes_set->end() &&
@@ -393,7 +393,7 @@ void Van::ProcessInstanceBarrierCommand(Message *msg) {
         if (shared_node_mapping_.find(r) == shared_node_mapping_.end()) {
           res.meta.recver = recver_id;
           res.meta.timestamp = timestamp_++;
-          CHECK_GT(Send(res), 0);
+          PS_CHECK_GT(Send(res), 0);
         }
       }
     }
@@ -440,7 +440,7 @@ void Van::ProcessBarrierCommand(Message *msg) {
         if (shared_node_mapping_.find(r) == shared_node_mapping_.end()) {
           res.meta.recver = recver_id;
           res.meta.timestamp = timestamp_++;
-          CHECK_GT(Send(res), 0);
+          PS_CHECK_GT(Send(res), 0);
         }
       }
       group_barrier_requests_[node_group].clear();
@@ -452,22 +452,24 @@ void Van::ProcessBarrierCommand(Message *msg) {
 
 void Van::ProcessDataMsg(Message *msg) {
   // data msg
-  CHECK_NE(msg->meta.sender, Meta::kEmpty);
-  CHECK_NE(msg->meta.recver, Meta::kEmpty);
-  CHECK_NE(msg->meta.app_id, Meta::kEmpty);
+  PS_CHECK_NE(msg->meta.sender, Meta::kEmpty);
+  PS_CHECK_NE(msg->meta.recver, Meta::kEmpty);
+  PS_CHECK_NE(msg->meta.app_id, Meta::kEmpty);
   int app_id = msg->meta.app_id;
   int customer_id = postoffice_->is_worker() ? msg->meta.customer_id : app_id;
   auto *obj = postoffice_->GetCustomer(app_id, customer_id, 5);
-  CHECK(obj) << "timeout (5 sec) to wait App " << app_id << " customer "
+  PS_CHECK(obj) << "timeout (5 sec) to wait App " << app_id << " customer "
              << customer_id << " ready at " << my_node_.role;
-  obj->Accept(*msg);
+  // obj->Accept(*msg);
+  PS_LOG(TRACE) << "DirectProcess";
+  obj->DirectProcess(*msg);
 
 #ifdef USE_PROFILING
   if (is_van_profiling_ && msg->data.size()) {
     std::chrono::microseconds ms =
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::system_clock::now().time_since_epoch());
-    // LOG(INFO) << (uint8_t)msg->data[0].data()[0] + 256 *
+    // PS_LOG(INFO) << (uint8_t)msg->data[0].data()[0] + 256 *
     // (uint8_t)msg->data[0].data()[1] << "\tvan_recv\t" << ms.count();
     if (postoffice_->is_worker()) {  // is worker
       if (msg->meta.push)
@@ -522,10 +524,10 @@ void Van::Start(int customer_id, bool standalone) {
   start_mu_.lock();
   if (init_stage == 0) {
     scheduler_.hostname = std::string(
-        CHECK_NOTNULL(Environment::Get()->find("DMLC_PS_ROOT_URI")));
+        PS_CHECK_NOTNULL(Environment::Get()->find("DMLC_PS_ROOT_URI")));
     scheduler_.num_ports = 1;
     scheduler_.port =
-        atoi(CHECK_NOTNULL(Environment::Get()->find("DMLC_PS_ROOT_PORT")));
+        atoi(PS_CHECK_NOTNULL(Environment::Get()->find("DMLC_PS_ROOT_PORT")));
     scheduler_.ports[0] = scheduler_.port;
     scheduler_.dev_types[0] = CPU;
     scheduler_.dev_ids[0] = 0;
@@ -542,16 +544,25 @@ void Van::Start(int customer_id, bool standalone) {
       const char *nhost = Environment::Get()->find("DMLC_NODE_HOST");
       std::string ip;
       if (nhost) ip = std::string(nhost);
+
+      const char *itf = Environment::Get()->find("DMLC_INTERFACE");
+      std::string interface;
+      if (itf) interface = std::string(itf);
+      if (interface == "auto" || interface == "AUTO") {
+        GetInterfaceAndIPByCurrentGpu(&interface, &ip);
+        PS_LOG(INFO) << "automatic detect interface and ip from gpu: "
+                  << interface << " (" << ip << ")" ;
+        Environment::Get()->set("DMLC_NODE_HOST", ip);
+        Environment::Get()->set("DMLC_INTERFACE", interface);
+      }else{
+        PS_LOG(INFO) << " interface and ip from env: "
+                  << interface << " (" << ip << ")" ;
+      }
       if (ip.empty()) {
-        const char *itf = Environment::Get()->find("DMLC_INTERFACE");
-        std::string interface;
-        if (itf) interface = std::string(itf);
-        if (interface.size()) {
-          GetIP(interface, &ip);
-        } else {
+        if (!interface.size()) {
           GetAvailableInterfaceAndIP(&interface, &ip);
         }
-        CHECK(!interface.empty()) << "failed to get the interface";
+        PS_CHECK(!interface.empty()) << "failed to get the interface";
       }
       // num_ports
       const char *npstr = Environment::Get()->find("DMLC_NUM_PORTS");
@@ -565,8 +576,8 @@ void Van::Start(int customer_id, bool standalone) {
 
       const char *pstr = Environment::Get()->find("DMLC_PORT");
       if (pstr) ports[0] = atoi(pstr);
-      CHECK(!ip.empty()) << "failed to get ip";
-      CHECK_EQ(num_available_ports, num_ports)
+      PS_CHECK(!ip.empty()) << "failed to get ip";
+      PS_CHECK_EQ(num_available_ports, num_ports)
           << "failed to get " << num_ports << " ports";
       Node node = my_node_;
       node.hostname = ip;
@@ -584,7 +595,7 @@ void Van::Start(int customer_id, bool standalone) {
     // bind.
     my_node_.port = Bind(my_node_, is_scheduler_ ? 0 : 40);
     PS_VLOG(1) << "Bind to " << my_node_.DebugString();
-    CHECK_NE(my_node_.port, -1) << "bind failed";
+    PS_CHECK_NE(my_node_.port, -1) << "bind failed";
 
     // connect to the scheduler
     Connect(scheduler_);
@@ -648,7 +659,7 @@ void Van::Stop() {
   // only customer 0 would call this method
   exit.meta.customer_id = 0;
   int ret = SendMsg(exit);
-  CHECK_NE(ret, -1);
+  PS_CHECK_NE(ret, -1);
   receiver_thread_->join();
   init_stage = 0;
   if (!is_scheduler_) heartbeat_thread_->join();
@@ -671,12 +682,21 @@ void Van::Stop() {
 }
 
 int Van::Send(Message &msg) {
+#if STEPAF_ENABLE_TRACE
+  if (msg.meta.request) {
+    msg.meta.request_trace.start = GetNanosecond();
+  } else {
+    msg.meta.response_trace.start = GetNanosecond();
+  }
+#endif  // STEPAF_ENABLE_TRACE
   int send_bytes = SendMsg(msg);
-  CHECK_NE(send_bytes, -1) << this->GetType() << " sent -1 bytes";
+  PS_CHECK_NE(send_bytes, -1) << this->GetType() << " sent -1 bytes";
   send_bytes_ += send_bytes;
   if (resender_) resender_->AddOutgoing(msg);
+#if STEPAF_ENABLE_TRACE
   PS_VLOG(2) << this->GetType() << " " << my_node_.id
              << "\tsent: " << msg.DebugString();
+#endif  // STEPAF_ENABLE_TRACE
   return send_bytes;
 }
 
@@ -692,15 +712,18 @@ void Van::Receiving() {
     if (ready_.load() && drop_rate_ > 0) {
       unsigned seed = time(NULL) + my_node_.id;
       if (rand_r(&seed) % 100 < drop_rate_) {
-        LOG(WARNING) << "Drop message " << msg.DebugString();
+        PS_LOG(WARNING) << "Drop message " << msg.DebugString();
         continue;
       }
     }
 
-    CHECK_NE(recv_bytes, -1);
+    PS_CHECK_NE(recv_bytes, -1);
     recv_bytes_ += recv_bytes;
-    PS_VLOG(2) << this->GetType() << " " << my_node_.id
+
+#ifdef STEPAF_ENABLE_TRACE
+    PS_LOG(TRACE) << this->GetType() << " " << my_node_.id
                << "\treceived: " << msg.DebugString();
+#endif
     // duplicated message
     if (resender_ && resender_->AddIncomming(msg)) continue;
 
@@ -719,9 +742,16 @@ void Van::Receiving() {
       } else if (ctrl.cmd == Control::HEARTBEAT) {
         ProcessHearbeat(&msg);
       } else {
-        LOG(WARNING) << "Drop unknown typed message " << msg.DebugString();
+        PS_LOG(WARNING) << "Drop unknown typed message " << msg.DebugString();
       }
     } else {
+#ifdef STEPAF_ENABLE_TRACE
+      if (msg.meta.request) {
+        msg.meta.request_trace.process = GetNanosecond();
+      } else {
+        msg.meta.response_trace.process = GetNanosecond();
+      }
+#endif
       ProcessDataMsg(&msg);
     }
   }
@@ -759,6 +789,10 @@ void Van::PackMeta(const Meta &meta, char **meta_buf, int *buf_size) {
   raw->request = meta.request;
   raw->simple_app = meta.simple_app;
   raw->customer_id = meta.customer_id;
+#ifdef STEPAF_ENABLE_TRACE
+  memcpy(&raw->request_trace, &meta.request_trace, sizeof(meta.request_trace));
+  memcpy(&raw->response_trace, &meta.response_trace, sizeof(meta.response_trace));
+#endif  // STEPAF_ENABLE_TRACE
   int data_type_count = 0;
   for (auto d : meta.data_type) {
     raw_data_type[data_type_count] = d;
@@ -815,6 +849,18 @@ void Van::PackMeta(const Meta &meta, char **meta_buf, int *buf_size) {
   raw->val_len = meta.val_len;
   raw->option = meta.option;
   raw->sid = meta.sid;
+
+  raw->slave_qp_num = 0;
+  for (int i = 0; i < QP_NUM; i++) {
+    raw->slave_qp_counter[i] = 0;
+  }
+
+  raw->is_tensor = meta.is_tensor;
+  raw->dtype = meta.dtype;
+  raw->dim = meta.shape.size();
+  for (int i = 0 ; i < raw->dim; i++) {
+    raw->shape[i] = meta.shape[i];
+  }
 }
 
 void Van::UnpackMeta(const char *meta_buf, int buf_size, Meta *meta) {
@@ -841,10 +887,21 @@ void Van::UnpackMeta(const char *meta_buf, int buf_size, Meta *meta) {
   meta->src_dev_id = raw->src_dev_id;
   meta->dst_dev_type = static_cast<DeviceType>(raw->dst_dev_type);
   meta->dst_dev_id = raw->dst_dev_id;
+
   auto ctrl = &(raw->control);
   meta->control.cmd = static_cast<Control::Command>(ctrl->cmd);
   meta->control.barrier_group = ctrl->barrier_group;
   meta->control.msg_sig = ctrl->msg_sig;
+
+#ifdef STEPAF_ENABLE_TRACE
+  meta->request_trace.start = raw->request_trace.start;
+  meta->request_trace.postsend = raw->request_trace.postsend;
+  if (!meta->request) {
+    memcpy(&meta->request_trace, &raw->request_trace, sizeof(raw->request_trace));
+    meta->response_trace.start = raw->response_trace.start;
+    meta->response_trace.postsend = raw->response_trace.postsend;
+  }
+#endif  // STEPAF_ENABLE_TRACE
   for (int i = 0; i < ctrl->node_size; ++i) {
     const auto &p = raw_node[i];
     Node n;
@@ -874,6 +931,11 @@ void Van::UnpackMeta(const char *meta_buf, int buf_size, Meta *meta) {
   meta->val_len = raw->val_len;
   meta->option = raw->option;
   meta->sid = raw->sid;
+  meta->is_tensor = raw->is_tensor;
+  meta->dtype = raw->dtype;
+  for (int i = 0 ; i < raw->dim; i++) {
+    meta->shape.push_back(raw->shape[i]);
+  }
 }
 
 void Van::Heartbeat() {

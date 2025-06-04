@@ -41,8 +41,8 @@ void aligned_memory_alloc(void** ptr, size_t size) {
   void* p;
   int size_aligned = ROUNDUP(size, page_size);
   int ret = posix_memalign(&p, page_size, size_aligned);
-  CHECK_EQ(ret, 0) << "posix_memalign error: " << strerror(ret);
-  CHECK(p);
+  PS_CHECK_EQ(ret, 0) << "posix_memalign error: " << strerror(ret);
+  PS_CHECK(p);
   memset(p, 1, size);
   *ptr = p;
 }
@@ -63,8 +63,8 @@ void EmptyHandler(const KVMeta &req_meta, const KVPairs<Val> &req_data, KVServer
   int node_id = atoi(node_id_str);
 
   if (req_meta.push) {
-    CHECK(req_data.lens.size());
-    CHECK_EQ(req_data.vals.size(), (size_t)req_data.lens[0]) 
+    PS_CHECK(req_data.lens.size());
+    PS_CHECK_EQ(req_data.vals.size(), (size_t)req_data.lens[0]) 
         << "key=" << key << ", " << req_data.vals.size() << ", " << req_data.lens[0];
 
     if (mem_map.find(key) == mem_map.end()) {
@@ -91,7 +91,7 @@ void EmptyHandler(const KVMeta &req_meta, const KVPairs<Val> &req_data, KVServer
     float_sum((float*) mem_map[key].vals.data(), (float*) recved, sum_len);
 
     if (debug_mode_) {
-      LOG(INFO) << "recved tensor! key=" << key << "\t"
+      PS_LOG(INFO) << "recved tensor! key=" << key << "\t"
           << "store: " << DEBUG_PRINT_TENSOR_VALUE(mem_map[key].vals.data()) << "\t"
           << "recv: " << DEBUG_PRINT_TENSOR_VALUE(recved) << "\t"
           << "address: " << DEBUG_PRINT_TENSOR_ADDRESS(recved) << "\t"
@@ -105,8 +105,8 @@ void EmptyHandler(const KVMeta &req_meta, const KVPairs<Val> &req_data, KVServer
   }
   else {
     auto iter = mem_map.find(key);
-    CHECK(req_meta.val_len != 0);
-    CHECK_NE(iter, mem_map.end()) << "Not found key: " << key - krs[node_id].begin();
+    PS_CHECK(req_meta.val_len != 0);
+    PS_CHECK_NE(iter, mem_map.end()) << "Not found key: " << key - krs[node_id].begin();
     server->Response(req_meta, iter->second);
   }
 }
@@ -140,7 +140,7 @@ inline int GetKeyIndex(COMM_TYPE type,
     case DENSE: {
       return global_session_rank * num_servers + tgt_global_gpu_id;
     } break;
-    default: CHECK(0);
+    default: PS_CHECK(0);
   }
   return -1;
 }
@@ -197,12 +197,12 @@ void InitWorker(KVWorker<char>* kv, int len, int global_session_size, int global
   for (int global_session_id = 0; global_session_id < global_session_size; global_session_id ++) {
     for (int global_gpu_id = 0; global_gpu_id < global_gpu_size; global_gpu_id ++) {
       int server_id = global_gpu_id / local_gpu_size;
-      LOG(INFO) << "Init key for global_gpu_id " << global_gpu_id << " @ node " << server_id;
+      PS_LOG(INFO) << "Init key for global_gpu_id " << global_gpu_id << " @ node " << server_id;
       // Init dataScatter
       {
         int idx = GetKeyIndex(COMM_TYPE::DATA_SCATTER, global_session_id, global_gpu_id,
                               global_gpu_size, num_servers);
-        CHECK(idx == (int) server_keys_datascatter.size()) 
+        PS_CHECK(idx == (int) server_keys_datascatter.size()) 
             << "global_session_id: " << global_session_id
             << " global_gpu_id: " << global_gpu_id
             << " idx: " << idx
@@ -218,11 +218,11 @@ void InitWorker(KVWorker<char>* kv, int len, int global_session_size, int global
       {
         int idx = GetKeyIndex(COMM_TYPE::GATHER, global_session_id, global_gpu_id,
                               global_gpu_size, num_servers);
-        CHECK(idx == (int) server_keys_gather_scatter.size());
+        PS_CHECK(idx == (int) server_keys_gather_scatter.size());
         auto vals = server_vals_gather_scatter[idx];
 
         ps::Key ps_key = krs[server_id].begin() + latest_key;
-        LOG(INFO) << "Prepare key for gather-scatter " << ps_key;
+        PS_LOG(INFO) << "Prepare key for gather-scatter " << ps_key;
         InitOneKeyThenPush(ps_key, server_keys_gather_scatter, server_lens, vals, len, kv, is_global_root);
       }
       latest_key ++;
@@ -233,7 +233,7 @@ void InitWorker(KVWorker<char>* kv, int len, int global_session_size, int global
       {
         int idx = GetKeyIndex(COMM_TYPE::DENSE, global_session_id, server,
                               global_gpu_size, num_servers);
-        CHECK(idx == (int) server_keys_dense.size());
+        PS_CHECK(idx == (int) server_keys_dense.size());
         auto vals = server_vals_dense[idx];
 
         ps::Key ps_key = krs[server].begin() + latest_key;
@@ -243,7 +243,7 @@ void InitWorker(KVWorker<char>* kv, int len, int global_session_size, int global
     }
   }
   Postoffice::GetWorker()->Barrier(0, ps::kWorkerGroup);
-  LOG(INFO) << "Finish setup.";
+  PS_LOG(INFO) << "Finish setup.";
 }
 
 void RunWorker(int argc, char *argv[], KVWorker<char>* kv, int tid, int nthread) {
@@ -264,8 +264,8 @@ void RunWorker(int argc, char *argv[], KVWorker<char>* kv, int tid, int nthread)
   auto krs = ps::Postoffice::Get()->GetServerKeyRanges();
 
   const int num_servers = krs.size();
-  LOG(INFO) << num_servers << " servers in total";
-  CHECK_GT(num_servers, 0);
+  PS_LOG(INFO) << num_servers << " servers in total";
+  PS_CHECK_GT(num_servers, 0);
 
   // init
   int len = (argc > 1) ? atoi(argv[1]) : 1024000 * 30;
@@ -282,7 +282,7 @@ void RunWorker(int argc, char *argv[], KVWorker<char>* kv, int tid, int nthread)
   int node_id = atoi(node_id_str);
   int my_global_session_id = nthread * node_id + tid;
 
-  LOG(INFO) << "Gather scatter simulate mode";
+  PS_LOG(INFO) << "Gather scatter simulate mode";
   for (int minibatch = 0; minibatch < repeat; ++ minibatch) {
     // DataScatter
     uint64_t accumulated_ms = 0;
@@ -437,18 +437,18 @@ int main(int argc, char *argv[]) {
 
   auto v = Environment::Get()->find("BENCHMARK_NTHREAD");
   const int nthread = v ? atoi(v) : 1;
-  LOG(INFO) << "number of threads for the same worker = " << nthread;
+  PS_LOG(INFO) << "number of threads for the same worker = " << nthread;
 
   // start system
-  const char* val = CHECK_NOTNULL(Environment::Get()->find("DMLC_ROLE"));
+  const char* val = PS_CHECK_NOTNULL(Environment::Get()->find("DMLC_ROLE"));
   std::string role_str(val);
   Node::Role role = GetRole(role_str);
   int rank = -1;
-  LOG(INFO) << "PS role = " << role_str;
+  PS_LOG(INFO) << "PS role = " << role_str;
   if (role == Node::SCHEDULER) {
     StartPS(0, role, rank, true);
     Finalize(0, role, true);
-    LOG(INFO) << "scheduler is DONE";
+    PS_LOG(INFO) << "scheduler is DONE";
     return 0;
   }
 
@@ -461,15 +461,15 @@ int main(int argc, char *argv[]) {
     auto krs = ps::Postoffice::Get()->GetServerKeyRanges();
     const int num_servers = krs.size();
 
-    LOG(INFO) << num_servers << " servers in total";
-    CHECK_GT(num_servers, 0);
+    PS_LOG(INFO) << num_servers << " servers in total";
+    PS_CHECK_GT(num_servers, 0);
     int len = (argc > 1) ? atoi(argv[1]) : 1024000 * 30;
     auto num_node = num_servers;
     auto global_session_size = nthread * num_node;
     int global_gpu_size = local_gpu_size * num_node;
 
     auto node_id_str = Environment::Get()->find("BYTEPS_NODE_ID");
-    CHECK(node_id_str) << "Please set BYTEPS_NODE_ID";
+    PS_CHECK(node_id_str) << "Please set BYTEPS_NODE_ID";
     int node_id = atoi(node_id_str);
 
     bool is_global_root = (node_id == 0);
@@ -483,10 +483,10 @@ int main(int argc, char *argv[]) {
   // wait for workers
   for (int i = 0; i < nthread; ++i) {
     threads[i].join();
-    LOG(INFO) << "Thread " << i << " is done.";
+    PS_LOG(INFO) << "Thread " << i << " is done.";
   }
   // stop system
   Finalize(0, role, true);
-  LOG(INFO) << "joint worker/server is DONE";
+  PS_LOG(INFO) << "joint worker/server is DONE";
   return 0;
 }

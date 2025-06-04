@@ -75,7 +75,7 @@ class SimpleApp {
                                const std::string& res_body = "");
 
   /**
-   * \brief the handle to proces a received request/respoonse
+   * \brief the handle to proces a received request/response
    *
    * \param recved the received request or response
    * \param app this pointer
@@ -87,7 +87,7 @@ class SimpleApp {
    * \param request_handle the request handle
    */
   virtual inline void set_request_handle(const Handle& request_handle) {
-    CHECK(request_handle) << "invalid request handle";
+    PS_CHECK(request_handle) << "invalid request handle";
     request_handle_ = request_handle;
   }
 
@@ -96,7 +96,7 @@ class SimpleApp {
    * \param response_handle the response handle
    */
   virtual inline void set_response_handle(const Handle& response_handle) {
-    CHECK(response_handle) << "invalid response handle";
+    PS_CHECK(response_handle) << "invalid response handle";
     response_handle_ = response_handle;
   }
 
@@ -184,10 +184,10 @@ inline void SimpleApp::Process(const Message& msg) {
   recv.timestamp = msg.meta.timestamp;
   recv.customer_id = msg.meta.customer_id;
   if (msg.meta.request) {
-    CHECK(request_handle_);
+    PS_CHECK(request_handle_);
     request_handle_(recv, this);
   } else {
-    CHECK(response_handle_);
+    PS_CHECK(response_handle_);
     response_handle_(recv, this);
   }
 }

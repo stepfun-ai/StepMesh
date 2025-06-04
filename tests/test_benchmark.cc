@@ -10,7 +10,7 @@
 #define CUDA_CALL(func)                                      \
   {                                                          \
     cudaError_t e = (func);                                  \
-    CHECK(e == cudaSuccess || e == cudaErrorCudartUnloading) \
+    PS_CHECK(e == cudaSuccess || e == cudaErrorCudartUnloading) \
         << "CUDA: " << cudaGetErrorString(e);                \
   }
 #endif
@@ -96,18 +96,18 @@ void aligned_memory_alloc(void** ptr, size_t size, int device_idx, DeviceType de
     void* p;
     int size_aligned = ROUNDUP(size, page_size);
     int ret = posix_memalign(&p, page_size, size_aligned);
-    CHECK_EQ(ret, 0) << "posix_memalign error: " << strerror(ret);
-    CHECK(p);
+    PS_CHECK_EQ(ret, 0) << "posix_memalign error: " << strerror(ret);
+    PS_CHECK(p);
     memset(p, 1, size);
     *ptr = p;
   } else {
-    CHECK(device == GPU);
+    PS_CHECK(device == GPU);
 #if DMLC_USE_CUDA
     // GPU Alloc, malloc should automatically gives page aligned.
     CUDA_CALL(cudaSetDevice(device_idx));
     CUDA_CALL(cudaMalloc(ptr, size));
 #else
-    CHECK(false) << "Please build with USE_CUDA=1";
+    PS_CHECK(false) << "Please build with USE_CUDA=1";
 #endif
   }
 }
@@ -128,7 +128,7 @@ uint64_t DecodeKey(ps::Key key) {
 }
 
 void ErrHandler(void* data, ps::ErrorCode status, std::string reason) {
-  LOG(INFO) << "Custom error handler invoked(" << (int) status << "). "
+  PS_LOG(INFO) << "Custom error handler invoked(" << (int) status << "). "
             << "reason: " << reason << ". aborting in 5 seconds";
   std::this_thread::sleep_for(std::chrono::seconds(5));
   abort();
@@ -138,15 +138,15 @@ template <typename Val>
 void EmptyHandler(const KVMeta &req_meta, const KVPairs<Val> &req_data, KVServer<Val> *server) {
   uint64_t key = req_data.keys[0];
   if (req_meta.push) {
-    CHECK(req_data.lens.size());
-    CHECK_EQ(req_data.vals.size(), (size_t)req_data.lens[0]) 
+    PS_CHECK(req_data.lens.size());
+    PS_CHECK_EQ(req_data.vals.size(), (size_t)req_data.lens[0]) 
         << "key=" << key << ", " << req_data.vals.size() << ", " << req_data.lens[0];
 
     auto key_decoded = DecodeKey(key);
     // check device id.
     if (!skip_dev_id_check) {
       int expected_device_id = dst_key2ctx(key_decoded);
-      CHECK_EQ(req_data.vals.dst_device_id_, expected_device_id)
+      PS_CHECK_EQ(req_data.vals.dst_device_id_, expected_device_id)
         << "key=" << key_decoded << ", "
         << req_data.vals.dst_device_id_ << " v.s. " << expected_device_id;
     }
@@ -154,7 +154,7 @@ void EmptyHandler(const KVMeta &req_meta, const KVPairs<Val> &req_data, KVServer
 
     if (mem_map.find(key) == mem_map.end()) {
       if (debug_mode_) {
-        LOG(INFO) << "recved tensor! key=" << key << "\t" << "not in mem_map";
+        PS_LOG(INFO) << "recved tensor! key=" << key << "\t" << "not in mem_map";
       }
       size_t len = (size_t) req_data.vals.size();
 
@@ -176,12 +176,12 @@ void EmptyHandler(const KVMeta &req_meta, const KVPairs<Val> &req_data, KVServer
       int worker_id = req_meta.sender;
       int64_t pair_id = server->instance_idx_;
       pair_id = (pair_id << 32) + worker_id;
-      CHECK(registered_buffs.find(pair_id) != registered_buffs.end())
+      PS_CHECK(registered_buffs.find(pair_id) != registered_buffs.end())
         << worker_id << " " << server->instance_idx_ << " " << pair_id;
       auto& buffs = registered_buffs[pair_id];
-      CHECK(buffs.find(key_decoded) != buffs.end()) << key_decoded;
+      PS_CHECK(buffs.find(key_decoded) != buffs.end()) << key_decoded;
       auto registered = buffs[key_decoded].data();
-      CHECK(registered == recved) << (long long) registered << " v.s. "
+      PS_CHECK(registered == recved) << (long long) registered << " v.s. "
         << (long long) recved << " key=" << key_decoded
         << " sender=" << worker_id << " size=" << req_data.vals.size();
     }
@@ -190,7 +190,7 @@ void EmptyHandler(const KVMeta &req_meta, const KVPairs<Val> &req_data, KVServer
     float_sum((float*) mem_map[key].vals.data(), (float*) recved, sum_len);
 
     if (debug_mode_) {
-      LOG(INFO) << "recved tensor! key=" << key << "\t"
+      PS_LOG(INFO) << "recved tensor! key=" << key << "\t"
           << "store: " << DEBUG_PRINT_TENSOR_VALUE(mem_map[key].vals.data()) << "\t"
           << "recv: " << DEBUG_PRINT_TENSOR_VALUE(recved) << "\t"
           << "address: " << DEBUG_PRINT_TENSOR_ADDRESS(recved) << "\t"
@@ -203,7 +203,7 @@ void EmptyHandler(const KVMeta &req_meta, const KVPairs<Val> &req_data, KVServer
     server->Response(req_meta, res);
   } else {
     auto iter = mem_map.find(key);
-    CHECK_NE(iter, mem_map.end());
+    PS_CHECK_NE(iter, mem_map.end());
     server->Response(req_meta, iter->second);
   }
 }
@@ -237,7 +237,7 @@ void GenerateVals(int total_key_num, int worker_rank,
                  src_device, src_dev_id, dst_device, dst_dev_id);
     }
     server_vals->push_back(vals);
-    LOG(INFO) << "Init val[" << key << "]: " << vals.DebugString();
+    PS_LOG(INFO) << "Init val[" << key << "]: " << vals.DebugString();
   }
 }
 
@@ -286,7 +286,7 @@ void StartServer(int argc, char *argv[], int group_size) {
   int num_workers = Postoffice::Get()->num_workers();
   int num_servers = Postoffice::Get()->num_servers();
   auto my_rank = ps::Postoffice::Get()->my_rank();
-  LOG(INFO) << "Registering buffers for server rank=" << my_rank
+  PS_LOG(INFO) << "Registering buffers for server rank=" << my_rank
             << ", num_servers=" << num_servers;
   auto v = Environment::Get()->find("NUM_KEY_PER_SERVER");
   const int how_many_key_per_server = v ? atoi(v) : 40;
@@ -315,7 +315,7 @@ void StartServer(int argc, char *argv[], int group_size) {
           mem_map[key].vals = server_vals[key];
           mem_map[key].lens = server_lens[key];
 
-          LOG(INFO) << "Server instance " << instance_idx << " registered buffer for worker_rank="
+          PS_LOG(INFO) << "Server instance " << instance_idx << " registered buffer for worker_rank="
                     << worker_rank << " key " << key << " ptr "
                     << (long long) server_vals[key].data();
         }
@@ -331,21 +331,21 @@ void push_pull(KVWorker<char>* kv,
                std::vector<SArray<int> > &server_lens,
                int len, int num_servers, int total_key_num, 
                int how_many_key_per_server, MODE mode, int tid) {
-  CHECK_GT(mode, 0);
+  PS_CHECK_GT(mode, 0);
   switch (mode) {
     case PUSH_PULL: 
-      LOG(INFO) << "========= PUSH_PULL mode =========";
-      LOG(INFO) << "========= msg_size=" << len*sizeof(char) << " bytes =========";
+      PS_LOG(INFO) << "========= PUSH_PULL mode =========";
+      PS_LOG(INFO) << "========= msg_size=" << len*sizeof(char) << " bytes =========";
       break;
     case PUSH_ONLY: 
-      LOG(INFO) << "========= PUSH_ONLY mode =========";
-      LOG(INFO) << "========= msg_size=" << len*sizeof(char) << " bytes =========";
+      PS_LOG(INFO) << "========= PUSH_ONLY mode =========";
+      PS_LOG(INFO) << "========= msg_size=" << len*sizeof(char) << " bytes =========";
        break;
     case PULL_ONLY: 
-      LOG(INFO) << "========= PULL_ONLY mode =========";
-      LOG(INFO) << "========= msg_size=" << len*sizeof(char) << " bytes =========";
+      PS_LOG(INFO) << "========= PULL_ONLY mode =========";
+      PS_LOG(INFO) << "========= msg_size=" << len*sizeof(char) << " bytes =========";
       break;
-    default: CHECK(0);
+    default: PS_CHECK(0);
   }
 
   std::vector<int> timestamp_list;
@@ -378,7 +378,7 @@ void push_pull(KVWorker<char>* kv,
           timestamp_list.push_back(kv->ZPull(keys, &vals, &lens));
         } break;
         default: {
-          CHECK(0);
+          PS_CHECK(0);
           break;
         } 
       }
@@ -406,8 +406,8 @@ void RunWorker(int argc, char *argv[], KVWorker<char>* kv, int tid) {
   auto krs = ps::Postoffice::Get()->GetServerKeyRanges();
 
   const int num_servers = krs.size();
-  LOG(INFO) << num_servers << " servers in total";
-  CHECK_GT(num_servers, 0);
+  PS_LOG(INFO) << num_servers << " servers in total";
+  PS_CHECK_GT(num_servers, 0);
 
   // init
   int len = (argc > 1) ? atoi(argv[1]) : 1024000;
@@ -431,7 +431,7 @@ void RunWorker(int argc, char *argv[], KVWorker<char>* kv, int tid) {
   // place a barrier to make sure the server has all the buffers registered.
   if (enable_recv_buffer) {
     ps::Postoffice::Get()->Barrier(0, kWorkerGroup + kServerGroup);
-    LOG(INFO) << "Server recv buff registration is DONE.";
+    PS_LOG(INFO) << "Server recv buff registration is DONE.";
   }
 
   // init push, do not count this into time cost
@@ -441,7 +441,7 @@ void RunWorker(int argc, char *argv[], KVWorker<char>* kv, int tid) {
 
   switch(mode) {
     case PUSH_THEN_PULL: {
-      LOG(INFO) << "PUSH_THEN_PULL mode";
+      PS_LOG(INFO) << "PUSH_THEN_PULL mode";
       // push
       uint64_t accumulated_ms = 0;
       for (int i = 0; i < repeat; ++i) {
@@ -488,7 +488,7 @@ void RunWorker(int argc, char *argv[], KVWorker<char>* kv, int tid) {
                 how_many_key_per_server, mode, tid);
       break;
     default:
-      CHECK(0) << "unknown mode " << mode;
+      PS_CHECK(0) << "unknown mode " << mode;
   }
 }
 
@@ -498,7 +498,7 @@ int main(int argc, char *argv[]) {
   // init env var options
   num_ports = env2int("DMLC_NUM_PORTS", 1);
   enable_recv_buffer = env2bool("ENABLE_RECV_BUFFER", false);
-  skip_dev_id_check = env2bool("SKIP_DEV_ID_CHECK", false);
+  skip_dev_id_check = env2bool("SKIP_DEV_ID_PS_CHECK", false);
   // num worker/server env vars
   local_size = env2int("TEST_NUM_GPU_WORKER", 0);
   enable_cpu = env2int("TEST_NUM_CPU_WORKER", 1);
@@ -508,24 +508,24 @@ int main(int argc, char *argv[]) {
   Van::set_err_handle(ErrHandler);
 
   // role
-  const char* val = CHECK_NOTNULL(Environment::Get()->find("DMLC_ROLE"));
+  const char* val = PS_CHECK_NOTNULL(Environment::Get()->find("DMLC_ROLE"));
   std::string role_str(val);
   Node::Role role = GetRole(role_str);
   is_server = role_str == std::string("server");
   if (is_server) {
-    CHECK(num_gpu_server || enable_cpu_server);
+    PS_CHECK(num_gpu_server || enable_cpu_server);
   } else {
-    CHECK(local_size || enable_cpu);
+    PS_CHECK(local_size || enable_cpu);
   }
 
   if (role_str == "server" || role_str == "joint") {
     if (enable_recv_buffer) {
-      LOG(INFO) << "recv buffer registration is enabled";
+      PS_LOG(INFO) << "recv buffer registration is enabled";
     } else {
-      LOG(INFO) << "recv buffer registration is NOT enabled";
+      PS_LOG(INFO) << "recv buffer registration is NOT enabled";
     }
   }
-  LOG(INFO) << "TEST_NUM_GPU_WORKER=" << local_size  << " TEST_NUM_GPU_SERVER="
+  PS_LOG(INFO) << "TEST_NUM_GPU_WORKER=" << local_size  << " TEST_NUM_GPU_SERVER="
             << num_gpu_server << " ports per node=" << num_ports;
 
 
@@ -533,11 +533,10 @@ int main(int argc, char *argv[]) {
   int my_rank = env2int("DMLC_RANK", -1);
   int group_size = env2int("DMLC_GROUP_SIZE", 1);
   StartPS(0, role, my_rank, true);
-
   // check rank
   if (my_rank != -1) {
     int assigned_rank = ps::Postoffice::Get()->my_rank();
-    CHECK(assigned_rank == my_rank) << assigned_rank << " v.s. " << my_rank;
+    PS_CHECK(assigned_rank == my_rank) << assigned_rank << " v.s. " << my_rank;
   }
 
   // setup server nodes
@@ -545,7 +544,7 @@ int main(int argc, char *argv[]) {
   // run worker nodes
   if (!IsServer() && !IsScheduler()) {
     const int nthread = env2int("BENCHMARK_NTHREAD", 1);
-    LOG(INFO) << "number of threads for the same worker = " << nthread;
+    PS_LOG(INFO) << "number of threads for the same worker = " << nthread;
     std::vector<KVWorker<char>*> kvs;
     std::vector<std::thread> threads;
     for (int i = 0; i < nthread; ++i) {
@@ -555,7 +554,7 @@ int main(int argc, char *argv[]) {
     }
     for (int i = 0; i < nthread; ++i) {
       threads[i].join();
-      LOG(INFO) << "Thread " << i << " is done.";
+      PS_LOG(INFO) << "Thread " << i << " is done.";
     }
   }
   // stop system

@@ -1,6 +1,7 @@
 /**
  *  Copyright (c) 2015 by Contributors
  *  Modifications Copyright (C) Mellanox Technologies Ltd. 2020.
+ *  Modifications Copyright (C) by StepAI Contributors. 2025.
  */
 #ifndef PS_KV_APP_H_
 #define PS_KV_APP_H_
@@ -14,6 +15,7 @@
 #include <sstream>
 #include <utility>
 #include <vector>
+#include <unordered_map>
 
 #include "ps/base.h"
 #include "ps/simple_app.h"
@@ -94,7 +96,7 @@ class KVWorker : public SimpleApp {
                << (long long)postoffice_;
     instance_idx_ = instance_idx;
     int group_size = postoffice_->group_size();
-    CHECK(group_size > instance_idx);
+    PS_CHECK(group_size > instance_idx);
 
     using namespace std::placeholders;
     slicer_ = std::bind(&KVWorker<Val>::DefaultSlicer, this, _1, _2, _3);
@@ -258,17 +260,27 @@ class KVWorker : public SimpleApp {
    * \brief set a user-defined slicer
    */
   void set_slicer(const Slicer& slicer) {
-    CHECK(slicer);
+    PS_CHECK(slicer);
     slicer_ = slicer;
   }
 
- private:
-  /**
-   * \brief internal pull, C/D can be either SArray or std::vector
-   */
-  template <typename C, typename D>
-  int Pull_(const SArray<Key>& keys, C* vals, D* lens, int cmd,
-            const Callback& cb);
+#ifdef STEPAF_ENABLE_TRACE
+  std::pair<struct Trace, struct Trace> FetchTrace(int timestamp) {
+    return obj_->FetchTrace(timestamp);
+  }
+#endif  // STEPAF_ENABLE_TRACE
+
+  void SendMsg(Message& msg, int dst) {
+    int group_server_rank = dst;
+    int instance_server_id = postoffice_->GroupServerRankToInstanceID(
+        group_server_rank, instance_idx_);
+
+    msg.meta.app_id = obj_->app_id();
+    msg.meta.customer_id = obj_->customer_id();
+    msg.meta.recver = instance_server_id;
+    postoffice_->van()->Send(msg);
+  }
+
   /**
    * \brief add a callback for a request. threadsafe.
    * @param cb callback
@@ -279,6 +291,24 @@ class KVWorker : public SimpleApp {
     std::lock_guard<std::mutex> lk(mu_);
     callbacks_[timestamp] = cb;
   }
+
+  int AllocTimestamp() {
+    return obj_->NewRequest(kServerGroup);
+  }
+
+  void EraseRecvKvs(int ts) {
+    mu_.lock();
+    recv_kvs_.erase(ts);
+    mu_.unlock();
+  }
+
+ private:
+  /**
+   * \brief internal pull, C/D can be either SArray or std::vector
+   */
+  template <typename C, typename D>
+  int Pull_(const SArray<Key>& keys, C* vals, D* lens, int cmd,
+            const Callback& cb);
 
   /**
    * \brief run and delete the callback
@@ -332,6 +362,19 @@ struct KVMeta {
   int val_len;
   /** \brief the option */
   int option;
+  /** \brief is the value tensor */
+  int is_tensor = 0;
+  /** \brief tensor dtype */
+  int dtype = 0;
+  /** \brief tensor shape */
+  std::vector<int64_t> shape;
+
+#ifdef STEPAF_ENABLE_TRACE
+  /** \brief request trace */
+  struct Trace request_trace;
+  /** \brief response trace */
+  struct Trace response_trace;
+#endif
 };
 
 /**
@@ -348,7 +391,7 @@ class KVServer : public SimpleApp {
       : SimpleApp() {
     postoffice_ = is_scheduler ? Postoffice::GetScheduler()
                                : Postoffice::GetServer(instance_idx);
-    CHECK(postoffice_) << is_scheduler << " " << instance_idx;
+    PS_CHECK(postoffice_) << is_scheduler << " " << instance_idx;
     instance_idx_ = instance_idx;
     using namespace std::placeholders;
     this->obj_ = new Customer(
@@ -375,7 +418,7 @@ class KVServer : public SimpleApp {
   using ReqHandle = std::function<void(
       const KVMeta& req_meta, const KVPairs<Val>& req_data, KVServer* server)>;
   void set_request_handle(const ReqHandle& request_handle) {
-    CHECK(request_handle) << "invalid request handle";
+    PS_CHECK(request_handle) << "invalid request handle";
     request_handle_ = request_handle;
   }
 
@@ -384,7 +427,7 @@ class KVServer : public SimpleApp {
    * \param req the meta-info of the request
    * \param res the kv pairs that will send back to the worker
    */
-  void Response(const KVMeta& req, const KVPairs<Val>& res = KVPairs<Val>());
+  void Response(const KVMeta& req, const KVPairs<Val>& res = KVPairs<Val>(), TensorEvent* event = nullptr);
 
   /**
    * specify the recver's buffer for target keys
@@ -431,7 +474,7 @@ struct KVServerDefaultHandle {
     size_t n = req_data.keys.size();
     KVPairs<Val> res;
     if (req_meta.push) {
-      CHECK_EQ(n, req_data.vals.size());
+      PS_CHECK_EQ(n, req_data.vals.size());
     } else {
       res.keys = req_data.keys;
       res.vals.resize(n);
@@ -460,10 +503,10 @@ void KVServer<Val>::RegisterRecvBuffer_(int worker_id, SArray<Key>& keys,
   msg.meta.push = true;
   msg.meta.head = cmd;
   msg.meta.sender = worker_id;
-  CHECK(keys.size());
+  PS_CHECK(keys.size());
   msg.AddData(keys);
   msg.AddData(vals);
-  CHECK(lens.size());
+  PS_CHECK(lens.size());
   msg.AddData(lens);
   auto key_ptr = reinterpret_cast<Key*>(msg.data[0].data());
   msg.meta.key = *key_ptr;
@@ -474,7 +517,7 @@ template <typename Val>
 void KVServer<Val>::RegisterRecvBuffer(int worker_id, SArray<Key>& keys,
                                        const SArray<Val>& vals,
                                        const SArray<int>& lens, int cmd) {
-  LOG(WARNING) << "RegisterRecvBuffer is deprecated. Please use "
+  PS_LOG(WARNING) << "RegisterRecvBuffer is deprecated. Please use "
                   "RegisterRecvBufferWithRank";
   RegisterRecvBuffer_(worker_id, keys, vals, lens, cmd);
   return;
@@ -515,33 +558,41 @@ void KVServer<Val>::Process(const Message& msg) {
   meta.addr = msg.meta.addr;
   meta.val_len = msg.meta.val_len;
   meta.option = msg.meta.option;
-
+  meta.is_tensor = msg.meta.is_tensor;
+  meta.dtype = msg.meta.dtype;
+  meta.shape = msg.meta.shape;
+#ifdef STEPAF_ENABLE_TRACE
+  memcpy(&meta.request_trace,
+         &msg.meta.request_trace,
+         sizeof(msg.meta.request_trace));
+  memcpy(&meta.response_trace,
+         &msg.meta.response_trace,
+         sizeof(msg.meta.response_trace));
+#endif
   KVPairs<Val> data;
   int n = msg.data.size();
   if (n) {
-    CHECK_GE(n, 2);
+    PS_CHECK_GE(n, 2);
     data.keys = msg.data[0];
     data.vals = msg.data[1];
     if (n > 2) {
-      CHECK_EQ(n, 3);
+      PS_CHECK_EQ(n, 3);
       data.lens = msg.data[2];
-      CHECK_EQ(data.lens.size(), data.keys.size());
+      PS_CHECK_EQ(data.lens.size(), data.keys.size());
     }
   }
-  CHECK(request_handle_);
+  PS_CHECK(request_handle_);
 
   request_handle_(meta, data, this);
 }
 
 template <typename Val>
-void KVServer<Val>::Response(const KVMeta& req, const KVPairs<Val>& res) {
+void KVServer<Val>::Response(const KVMeta& req, const KVPairs<Val>& res, TensorEvent* event) {
   // server instance group support
   int group_worker_id = req.sender;
   int group_worker_rank = postoffice_->IDtoRank(group_worker_id);
   int instance_worker_id = postoffice_->GroupWorkerRankToInstanceID(
       group_worker_rank, instance_idx_);
-  // PS_VLOG(3) << "server instance " << instance_idx_ << " response to " <<
-  // instance_worker_id;
 
   Message msg;
   msg.meta.app_id = obj_->app_id();
@@ -555,6 +606,22 @@ void KVServer<Val>::Response(const KVMeta& req, const KVPairs<Val>& res) {
   msg.meta.addr = req.addr;
   msg.meta.val_len = req.val_len;
   msg.meta.option = req.option;
+#ifdef DMLC_USE_CUDA
+  if (event != nullptr) {
+    msg.meta.tensor_ev = event;
+    // msg.meta.tensor_ev->record();
+  }
+
+#endif
+#ifdef STEPAF_ENABLE_TRACE
+  memcpy(&msg.meta.request_trace,
+         &req.request_trace,
+         sizeof(msg.meta.request_trace));
+  memcpy(&msg.meta.response_trace,
+         &req.response_trace,
+         sizeof(msg.meta.response_trace));
+#endif
+
   if (res.keys.size()) {
     msg.AddData(res.keys);
     msg.AddData(res.vals);
@@ -581,7 +648,7 @@ void KVWorker<Val>::DefaultSlicer(const KVPairs<Val>& send,
       pos[0] = std::lower_bound(begin, end, ranges[0].begin()) - begin;
       begin += pos[0];
     } else {
-      CHECK_EQ(ranges[i - 1].end(), ranges[i].begin());
+      PS_CHECK_EQ(ranges[i - 1].end(), ranges[i].begin());
     }
     size_t len = std::lower_bound(begin, end, ranges[i].end()) - begin;
     begin += len;
@@ -590,16 +657,16 @@ void KVWorker<Val>::DefaultSlicer(const KVPairs<Val>& send,
     // don't send it to servers for empty kv
     sliced->at(i).first = (len != 0);
   }
-  CHECK_EQ(pos[n], send.keys.size());
+  PS_CHECK_EQ(pos[n], send.keys.size());
   if (send.keys.empty()) return;
 
   // the length of value
   size_t k = 0, val_begin = 0, val_end = 0;
   if (send.lens.empty()) {
     k = send.vals.size() / send.keys.size();
-    CHECK_EQ(k * send.keys.size(), send.vals.size());
+    PS_CHECK_EQ(k * send.keys.size(), send.vals.size());
   } else {
-    CHECK_EQ(send.keys.size(), send.lens.size());
+    PS_CHECK_EQ(send.keys.size(), send.lens.size());
   }
 
   // slice
@@ -661,7 +728,7 @@ void KVWorker<Val>::Send(int timestamp, bool push, int cmd, KVPairs<Val>& kvs) {
     auto& kvs = s.second;
     msg.meta.addr = reinterpret_cast<uint64_t>(kvs.vals.data());
     msg.meta.val_len = kvs.vals.size();
-
+    msg.data.clear();
     src_dev_type = kvs.vals.src_device_type_;
     src_dev_id = kvs.vals.src_device_id_;
     dst_dev_type = kvs.vals.dst_device_type_;
@@ -695,7 +762,7 @@ void KVWorker<Val>::Process(const Message& msg) {
   // store the data for pulling
   int ts = msg.meta.timestamp;
   if (!msg.meta.push && msg.data.size()) {
-    CHECK_GE(msg.data.size(), (size_t)2);
+    PS_CHECK_GE(msg.data.size(), (size_t)2);
     KVPairs<Val> kvs;
     kvs.keys = msg.data[0];
     kvs.vals = msg.data[1];
@@ -711,20 +778,22 @@ void KVWorker<Val>::Process(const Message& msg) {
     RunCallback(ts);
   }
 }
+
 template <typename Val>
 void KVWorker<Val>::RunCallback(int timestamp) {
-  mu_.lock();
+  std::unique_lock<std::mutex> lock(mu_);
+  if (callbacks_.empty()) {
+    return;
+  }
+
   auto it = callbacks_.find(timestamp);
   if (it != callbacks_.end()) {
-    mu_.unlock();
-
-    CHECK(it->second);
+    PS_CHECK(it->second);
+    lock.unlock();
     it->second();
-
-    mu_.lock();
+    lock.lock();
     callbacks_.erase(it);
   }
-  mu_.unlock();
 }
 
 template <typename Val>
@@ -741,24 +810,24 @@ int KVWorker<Val>::Pull_(const SArray<Key>& keys, C* vals, D* lens, int cmd,
     size_t total_key = 0, total_val = 0;
     for (const auto& s : kvs) {
       Range range = FindRange(keys, s.keys.front(), s.keys.back() + 1);
-      CHECK_EQ(range.size(), s.keys.size())
+      PS_CHECK_EQ(range.size(), s.keys.size())
           << "unmatched keys size from one server";
-      if (lens) CHECK_EQ(s.lens.size(), s.keys.size());
+      if (lens) PS_CHECK_EQ(s.lens.size(), s.keys.size());
       total_key += s.keys.size();
       total_val += s.vals.size();
     }
-    CHECK_EQ(total_key, keys.size()) << "lost some servers?";
+    PS_CHECK_EQ(total_key, keys.size()) << "lost some servers?";
 
     // fill vals and lens
     std::sort(kvs.begin(), kvs.end(),
               [](const KVPairs<Val>& a, const KVPairs<Val>& b) {
                 return a.keys.front() < b.keys.front();
               });
-    CHECK_NOTNULL(vals);
+    PS_CHECK_NOTNULL(vals);
     if (vals->empty()) {
       vals->resize(total_val);
     } else {
-      CHECK_GE(vals->size(), total_val);
+      PS_CHECK_GE(vals->size(), total_val);
     }
 
     if (!is_worker_zpull_) {  // otherwise do nothing
@@ -768,7 +837,7 @@ int KVWorker<Val>::Pull_(const SArray<Key>& keys, C* vals, D* lens, int cmd,
         if (lens->empty()) {
           lens->resize(keys.size());
         } else {
-          CHECK_EQ(lens->size(), keys.size());
+          PS_CHECK_EQ(lens->size(), keys.size());
         }
         p_lens = lens->data();
       }

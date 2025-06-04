@@ -50,13 +50,13 @@ ErrorCode GetErrorCode(ucs_status_t status) {
 
 std::mutex g_log_mutex;
 
-#define CHECK_STATUS(_status) CHECK((_status) == UCS_OK)
+#define PS_CHECK_STATUS(_status) PS_CHECK((_status) == UCS_OK)
 
 #define UCX_LOG_BASE(_prio, _my_node, _x) \
  do { \
    if (_prio <= Postoffice::Get()->verbose()) { \
      std::lock_guard<std::mutex> lock(g_log_mutex); \
-     LOG(INFO) << (_my_node)->ShortDebugString() << " " << _x; \
+     PS_LOG(INFO) << (_my_node)->ShortDebugString() << " " << _x; \
    } \
  } while(0)
 
@@ -142,16 +142,16 @@ public:
     tx_worker_ = tx_worker;
     rx_worker_ = rx_worker;
     my_node_   = node;
-    CHECK_STATUS(ucp_worker_set_am_handler(rx_worker_, UCX_AM_NODE_INFO_REQ,
+    PS_CHECK_STATUS(ucp_worker_set_am_handler(rx_worker_, UCX_AM_NODE_INFO_REQ,
                                            AmRxNodeInfoReq, this,
                                            UCP_AM_FLAG_WHOLE_MSG));
-    CHECK_STATUS(ucp_worker_set_am_handler(rx_worker_, UCX_AM_NODE_INFO_REPLY,
+    PS_CHECK_STATUS(ucp_worker_set_am_handler(rx_worker_, UCX_AM_NODE_INFO_REPLY,
                                            AmRxNodeInfoReply, this,
                                            UCP_AM_FLAG_WHOLE_MSG));
-    CHECK_STATUS(ucp_worker_set_am_handler(tx_worker_, UCX_AM_NODE_INFO_REQ,
+    PS_CHECK_STATUS(ucp_worker_set_am_handler(tx_worker_, UCX_AM_NODE_INFO_REQ,
                                            AmRxNodeInfoReq, this,
                                            UCP_AM_FLAG_WHOLE_MSG));
-    CHECK_STATUS(ucp_worker_set_am_handler(tx_worker_, UCX_AM_NODE_INFO_REPLY,
+    PS_CHECK_STATUS(ucp_worker_set_am_handler(tx_worker_, UCX_AM_NODE_INFO_REPLY,
                                            AmRxNodeInfoReply, this,
                                            UCP_AM_FLAG_WHOLE_MSG));
   }
@@ -170,7 +170,7 @@ public:
                ", port " << node.ports[i] << ", device id " << node.dev_ids[i]);
 
       struct addrinfo *remote_addr;
-      CHECK_EQ(getaddrinfo(node.hostname.c_str(), std::to_string(node.ports[i]).c_str(),
+      PS_CHECK_EQ(getaddrinfo(node.hostname.c_str(), std::to_string(node.ports[i]).c_str(),
                   nullptr, &remote_addr),
                0);
 
@@ -197,7 +197,7 @@ public:
   }
 
   void Create(UCXEp *ucx_ep) {
-    CHECK_EQ(ucx_ep->connected, false);
+    PS_CHECK_EQ(ucx_ep->connected, false);
 
     ucp_ep_params_t ep_params;
     ep_params.field_mask        = UCP_EP_PARAM_FIELD_FLAGS |
@@ -215,7 +215,7 @@ public:
 
     // Initiate ep creation on tx worker
     ucs_status_t status = ucp_ep_create(tx_worker_, &ep_params, &ucx_ep->ep);
-    CHECK_STATUS(status) << "ucp_ep_create failed: " << ucs_status_string(status);
+    PS_CHECK_STATUS(status) << "ucp_ep_create failed: " << ucs_status_string(status);
 
     UCX_LOGE(3, "ep created " << ucx_ep->ep << " id: " << ucx_ep->id);
 
@@ -227,7 +227,7 @@ public:
     if (UCS_PTR_IS_PTR(req)) {
       ucp_request_free(req);
     } else {
-      CHECK(!UCS_PTR_IS_ERR(req)) << "failed to send node info";
+      PS_CHECK(!UCS_PTR_IS_ERR(req)) << "failed to send node info";
     }
   }
 
@@ -248,7 +248,7 @@ public:
     // incoming data on it.
     ucp_ep_h ep;
     ucs_status_t status = ucp_ep_create(rx_worker_, &ep_params, &ep);
-    CHECK_STATUS(status) << "failed to create ep by request " << ucs_status_string(status);
+    PS_CHECK_STATUS(status) << "failed to create ep by request " << ucs_status_string(status);
     UCX_LOGE(3, "ep created by request: " << ep);
     // Wait for node id to arrive in AmRxNodeInfo, then add to the server_eps set
   }
@@ -297,7 +297,7 @@ public:
     } else {
       ucs_status_t status = UCS_PTR_STATUS(req);
       if ((status != UCS_OK) && (status != UCS_ERR_ENDPOINT_TIMEOUT)) {
-        LOG(ERROR) << "failed to close ep: " << ep << "("
+        PS_PS_LOG(ERROR) << "failed to close ep: " << ep << "("
                    << ucs_status_string(status) << ")";
       }
     }
@@ -361,14 +361,14 @@ public:
 
   static void AmReqCompletedCb(void *request, ucs_status_t status)
   {
-    CHECK_STATUS(status) << "node info send failed: " << ucs_status_string(status);
+    PS_CHECK_STATUS(status) << "node info send failed: " << ucs_status_string(status);
   }
 
   static ucs_status_t AmRxNodeInfoReq(void *arg, void *data, size_t length,
                                       ucp_ep_h reply_ep, unsigned flags)
   {
-    CHECK_EQ(length, sizeof(uint64_t)) << "length " << length;
-    CHECK(reply_ep);
+    PS_CHECK_EQ(length, sizeof(uint64_t)) << "length " << length;
+    PS_CHECK(reply_ep);
     UCXEndpointsPool *p = reinterpret_cast<UCXEndpointsPool*>(arg);
     uint64_t id         = *(reinterpret_cast<uint64_t*>(data));
 
@@ -388,7 +388,7 @@ public:
     if (UCS_PTR_IS_PTR(req)) {
       ucp_request_free(req);
     } else {
-      CHECK(!UCS_PTR_IS_ERR(req)) << "failed to send node info";
+      PS_CHECK(!UCS_PTR_IS_ERR(req)) << "failed to send node info";
     }
 
     return UCS_OK;
@@ -397,7 +397,7 @@ public:
   static ucs_status_t AmRxNodeInfoReply(void *arg, void *data, size_t length,
                                         ucp_ep_h reply_ep, unsigned flags)
   {
-    CHECK_EQ(length, sizeof(uint64_t)) << "length " << length;
+    PS_CHECK_EQ(length, sizeof(uint64_t)) << "length " << length;
     UCXEndpointsPool *p = reinterpret_cast<UCXEndpointsPool*>(arg);
     uint64_t id         = *(reinterpret_cast<uint64_t*>(data));
 
@@ -410,7 +410,7 @@ public:
 
     p->mu_.lock();
     auto e = p->client_eps_.find(id);
-    CHECK_NE(e, p->client_eps_.end());
+    PS_CHECK_NE(e, p->client_eps_.end());
     p->mu_.unlock();
 
     {
@@ -461,7 +461,7 @@ public:
       // Must be receive for pulled data, get the cached address
       std::lock_guard<std::mutex> lock(w_pool_mtx_);
       auto addr = w_pool_.find(key);
-      CHECK(addr != w_pool_.end());
+      PS_CHECK(addr != w_pool_.end());
       return addr->second;
     }
 
@@ -480,8 +480,8 @@ public:
     char *buf;
     size_t page_size = sysconf(_SC_PAGESIZE);
     int ret          = posix_memalign((void**)&buf, page_size, size);
-    CHECK(!ret) << "posix_memalign error: " << strerror(ret);
-    CHECK(buf);
+    PS_CHECK(!ret) << "posix_memalign error: " << strerror(ret);
+    PS_CHECK(buf);
     memset(buf, 0, size);
     rpool_[key][node_id] = UCXAddress(buf, size, false);
 
@@ -547,7 +547,7 @@ public:
   void Init(Node *my_node, UCXVan *van) {
     ucp_config_t *config;
     ucs_status_t status = ucp_config_read("PSLITE", NULL, &config);
-    CHECK_STATUS(status) << "ucp_config_read failed: " << ucs_status_string(status);
+    PS_CHECK_STATUS(status) << "ucp_config_read failed: " << ucs_status_string(status);
 
     // Set proper GPU device id before initialazing GPU context
     SetGpuDeviceId();
@@ -568,7 +568,7 @@ public:
 
     status = ucp_init(&ctx_params, config, &context_);
     ucp_config_release(config);
-    CHECK_STATUS(status) << "ucp_init failed: " << ucs_status_string(status);
+    PS_CHECK_STATUS(status) << "ucp_init failed: " << ucs_status_string(status);
 
     // Create UCP workers:
     // - Send worker is created with multi-threading support, because it is used
@@ -630,14 +630,14 @@ public:
     mem_map_params.memory_type = is_gpu ? UCS_MEMORY_TYPE_CUDA : UCS_MEMORY_TYPE_HOST;
     ucp_mem_h memh = NULL;
     auto status = ucp_mem_map(context_, &mem_map_params, &memh);
-    CHECK_STATUS(status) << "ucp_mem_map failed: " << ucs_status_string(status);
+    PS_CHECK_STATUS(status) << "ucp_mem_map failed: " << ucs_status_string(status);
     void *rkey_buffer_p;
     size_t size_p;
     status = ucp_rkey_pack(context_, memh, &rkey_buffer_p, &size_p);
-    CHECK_STATUS(status) << "ucp_rkey_pack failed: " << ucs_status_string(status);
+    PS_CHECK_STATUS(status) << "ucp_rkey_pack failed: " << ucs_status_string(status);
     ucp_rkey_buffer_release(rkey_buffer_p);
     status = ucp_mem_unmap(context_, memh);
-    CHECK_STATUS(status) << "ucp_mem_unmap failed: " << ucs_status_string(status);
+    PS_CHECK_STATUS(status) << "ucp_mem_unmap failed: " << ucs_status_string(status);
     VLOG(1) << "Pinned memory for " << addr << " len=" << length << " gpu=" << is_gpu;
   }
 
@@ -715,11 +715,11 @@ private:
       cudaError_t cerr = cudaSetDevice(src_dev_idx_);
 
       if (cudaSuccess != cerr) {
-        LOG(ERROR) << "failed to set device " << src_dev_idx_ << ": " << cerr;
+        PS_PS_LOG(ERROR) << "failed to set device " << src_dev_idx_ << ": " << cerr;
       }
     }
 #else
-    CHECK_NE(src_dev_type_, GPU) << "Please build with USE_CUDA=1";
+    PS_CHECK_NE(src_dev_type_, GPU) << "Please build with USE_CUDA=1";
 #endif
   }
 
@@ -730,15 +730,15 @@ private:
     w_params.field_mask  = UCP_WORKER_PARAM_FIELD_THREAD_MODE;
     w_params.thread_mode = multi_thread ? UCS_THREAD_MODE_MULTI : UCS_THREAD_MODE_SINGLE;
     ucs_status_t status  = ucp_worker_create(context_, &w_params, &worker);
-    CHECK_STATUS(status) << "ucp_worker_create failed: " << ucs_status_string(status);
+    PS_CHECK_STATUS(status) << "ucp_worker_create failed: " << ucs_status_string(status);
 
     if (multi_thread) {
       // Check that UCX is compiled with multi-thread support
       ucp_worker_attr_t attr;
       attr.field_mask = UCP_WORKER_ATTR_FIELD_THREAD_MODE;
       status          = ucp_worker_query(worker, &attr);
-      CHECK_STATUS(status) << "ucp_worker_query failed: " << ucs_status_string(status);
-      CHECK_EQ(attr.thread_mode, UCS_THREAD_MODE_MULTI)
+      PS_CHECK_STATUS(status) << "ucp_worker_query failed: " << ucs_status_string(status);
+      PS_CHECK_EQ(attr.thread_mode, UCS_THREAD_MODE_MULTI)
                << "Single threaded UCX is not supported, build UCX with multi-thread support";
     }
 
@@ -774,7 +774,7 @@ private:
     if (meta->option == UCX_OPTION_META) {
       UCX_LOGE(3, " rx just meta, sender " << meta_req->data.sender
                << " val_len: " << val_len);
-      CHECK_EQ(meta_req->data.buffer, nullptr);
+      PS_CHECK_EQ(meta_req->data.buffer, nullptr);
       rx_pool_->Push(meta_req->data);
     } else if (meta->option > 0) {
       UCX_LOGE(3, " rx meta with data, data len: " << val_len);
@@ -783,7 +783,7 @@ private:
       memcpy(meta_req->data.buffer, meta_req->data.raw_meta + meta->option, val_len);
       rx_pool_->Push(meta_req->data);
     } else {
-      CHECK_EQ(meta->option, UCX_OPTION_DATA);
+      PS_CHECK_EQ(meta->option, UCX_OPTION_DATA);
       // Add sender id to the tag to ensure message received from the proper node
       char *buf       = rx_pool_->GetRxBuffer(meta->key, meta_req->data.sender,
                                               val_len, meta->push);
@@ -846,7 +846,7 @@ private:
       std::string reason = "RxMetaCompletedCb failed with " + std::string(ucs_status_string(status));
       Van::err_handle_(&status, GetErrorCode(status), reason);
     } else {
-      CHECK_STATUS(status) << "RxMetaCompletedCb failed with " << ucs_status_string(status);
+      PS_CHECK_STATUS(status) << "RxMetaCompletedCb failed with " << ucs_status_string(status);
     }
     req->completed = true;
     if (req->data.raw_meta == nullptr) {
@@ -865,7 +865,7 @@ private:
       std::string reason = "RxDataCompletedCb failed with " + std::string(ucs_status_string(status));
       Van::err_handle_(&status, GetErrorCode(status), reason);
     } else {
-      CHECK_STATUS(status) << "RxDataCompletedCb failed with " << ucs_status_string(status);
+      PS_CHECK_STATUS(status) << "RxDataCompletedCb failed with " << ucs_status_string(status);
     }
     req->completed = true;
     if (req->data.buffer == nullptr) {
@@ -884,7 +884,7 @@ private:
       std::string reason = "TX request completed with " + std::string(ucs_status_string(status));
       Van::err_handle_(&status, GetErrorCode(status), reason);
     } else {
-      CHECK_STATUS(status) << "TX request completed with " << ucs_status_string(status);
+      PS_CHECK_STATUS(status) << "TX request completed with " << ucs_status_string(status);
     }
     delete [] send_buf;
 
@@ -911,13 +911,13 @@ class UCXVan : public Van {
     force_request_order_ = GetEnv("BYTEPS_UCX_FORCE_REQ_ORDER", 0);
     queue_sends_         = GetEnv("BYTEPS_UCX_QUEUE_SENDS", 0);
     if (!getenv("UCX_USE_MT_MUTEX") && !getenv("PSLITE_UCX_USE_MT_MUTEX")) {
-      LOG(FATAL) << "PSLITE_UCX_USE_MT_MUTEX is not set. Please export PSLITE_UCX_USE_MT_MUTEX=y";
+      PS_LOG(FATAL) << "PSLITE_UCX_USE_MT_MUTEX is not set. Please export PSLITE_UCX_USE_MT_MUTEX=y";
     }
     if (!getenv("UCX_RNDV_THRESH") && !getenv("PSLITE_UCX_RNDV_THRESH")) {
-      LOG(WARNING) << "PSLITE_UCX_RNDV_THRESH is not set. We recommend export PSLITE_UCX_RNDV_THRESH=8k";
+      PS_LOG(WARNING) << "PSLITE_UCX_RNDV_THRESH is not set. We recommend export PSLITE_UCX_RNDV_THRESH=8k";
     }
     if (!getenv("UCX_IB_TRAFFIC_CLASS")) {
-      LOG(WARNING) << "UCX_IB_TRAFFIC_CLASS is not set. RDMA traffic class may be incorrect";
+      PS_LOG(WARNING) << "UCX_IB_TRAFFIC_CLASS is not set. RDMA traffic class may be incorrect";
     }
   }
 
@@ -970,7 +970,7 @@ class UCXVan : public Van {
     int num_cpu_dev   = GetEnv("DMLC_NUM_CPU_DEV", 1);
     int num_gpu_dev   = GetEnv("DMLC_NUM_GPU_DEV", 0);
 
-    // CHECK_EQ(num_cpu_dev + num_gpu_dev, node.num_ports);
+    // PS_CHECK_EQ(num_cpu_dev + num_gpu_dev, node.num_ports);
     PS_VLOG(1) << "num_cpu_dev=" << num_cpu_dev << " num_gpu_dev=" << num_gpu_dev
       << " node.num_ports=" << node.num_ports;
 
@@ -987,13 +987,13 @@ class UCXVan : public Van {
     // Create separate UCX context for every device. If device is GPU, set the
     // corresponding cuda device before UCX context creation. This way UCX will
     // automatically select the most optimal NICs for using with this device.
-    CHECK(static_cast<int>(devs.size()) == node.num_ports)
+    PS_CHECK(static_cast<int>(devs.size()) == node.num_ports)
       << "num_cpu_dev + num_gpu_dev != num_ports";
     for (int i = 0; i < node.num_ports; ++i) {
       node.dev_types[i] = devs[i].first;
       node.dev_ids[i] = devs[i].second;
       int dev_id = node.dev_ids[i];
-      CHECK_GE(dev_id, 0);
+      PS_CHECK_GE(dev_id, 0);
 
       contexts_[dev_id] = std::make_unique<UCXContext>(rx_pool_.get(), dev_id,
                                                        node.dev_types[i]);
@@ -1018,7 +1018,7 @@ class UCXVan : public Van {
           }
         }
         if (trial >= max_retry) {
-          CHECK(false) << "ucp_listener_create failed: " << ucs_status_string(status)
+          PS_CHECK(false) << "ucp_listener_create failed: " << ucs_status_string(status)
                        << " node=" << node.DebugString();
         }
       }
@@ -1036,9 +1036,9 @@ class UCXVan : public Van {
   }
 
   void Connect(const Node &node) override {
-    CHECK_NE(node.id, node.kEmpty);
-    CHECK_NE(node.port, node.kEmpty);
-    CHECK(node.hostname.size());
+    PS_CHECK_NE(node.id, node.kEmpty);
+    PS_CHECK_NE(node.port, node.kEmpty);
+    PS_CHECK(node.hostname.size());
 
     // worker doesn't need to connect to the other workers. same for server
     if ((node.role == my_node_.role) && (node.id != my_node_.id)) {
@@ -1055,7 +1055,7 @@ class UCXVan : public Van {
     int id           = msg.meta.recver;
     int src_dev_id   = msg.meta.src_dev_id;
     UCXTxReq req;
-    CHECK_NE(id, Meta::kEmpty);
+    PS_CHECK_NE(id, Meta::kEmpty);
 
     msg.meta.option = UCX_OPTION_META;
 
@@ -1073,7 +1073,7 @@ class UCXVan : public Van {
         msg.meta.option  = UCX_OPTION_DATA;
       } else if (!msg.meta.push && msg.meta.request) {
         // Save pull data address
-        CHECK(msg.meta.addr != 0);
+        PS_CHECK(msg.meta.addr != 0);
         rx_pool_->CacheLocalAddress(msg.meta.key, (char*)msg.meta.addr);
       }
     } else {
@@ -1091,7 +1091,7 @@ class UCXVan : public Van {
       return len + msg.meta.data_size; // No data, or data was bundled with meta
     }
     // data
-    CHECK(IsDataMsg(msg));
+    PS_CHECK(IsDataMsg(msg));
 
     req.buf        = msg.data[1].data();
     req.count      = msg.data[1].size();
@@ -1114,7 +1114,7 @@ class UCXVan : public Van {
           std::string reason = "failed to send data: " + std::string(ucs_status_string(st_val));
           Van::err_handle_(&st_val, GetErrorCode(st_val), reason);
         } else {
-          LOG(ERROR) << "failed to send data: " << ucs_status_string(st_val)
+          PS_PS_LOG(ERROR) << "failed to send data: " << ucs_status_string(st_val)
                      << ". " << msg.DebugString();
         }
         return -1;
@@ -1180,7 +1180,7 @@ class UCXVan : public Van {
                                  + ". " + msg.DebugString();
             Van::err_handle_(&st_val, GetErrorCode(st_val), reason);
           } else {
-            LOG(ERROR) << "failed to send meta data: " << ucs_status_string(UCS_PTR_STATUS(st))
+            PS_PS_LOG(ERROR) << "failed to send meta data: " << ucs_status_string(UCS_PTR_STATUS(st))
                        << ". " << msg.DebugString();
           }
           return -1;
@@ -1206,7 +1206,7 @@ class UCXVan : public Van {
 
     // for pull request, we still need to set the key
     if (!IsValidPushpull(*msg) || (msg->meta.push && !msg->meta.request)) {
-      CHECK_EQ(msg->meta.option, UCX_OPTION_META);
+      PS_CHECK_EQ(msg->meta.option, UCX_OPTION_META);
       return total_len;
     }
 
@@ -1240,16 +1240,16 @@ class UCXVan : public Van {
 #if DMLC_USE_CUDA
     if (is_gpu) {
       auto err = cudaGetDevice(&dev_id);
-      CHECK(err == cudaSuccess) << "cudaGetDevice failed: " << err;
+      PS_CHECK(err == cudaSuccess) << "cudaGetDevice failed: " << err;
     }
 #endif
     auto ctx = ContextById(dev_id);
-    CHECK(ctx) << "invalid device id " << dev_id;
+    PS_CHECK(ctx) << "invalid device id " << dev_id;
     ctx->PinMemory(addr, length, is_gpu);
   }
 
   bool IsPushpullRequest(const RawMeta* raw) {
-    CHECK(raw != nullptr);
+    PS_CHECK(raw != nullptr);
     auto ctrl = &(raw->control);
     Control::Command cmd = static_cast<Control::Command>(ctrl->cmd);
     if (cmd != Control::EMPTY) return false;
@@ -1272,9 +1272,9 @@ class UCXVan : public Van {
         continue;
       }
       int sid = raw->sid;
-      CHECK(sid >= 0) << "invalid sid " << sid;
+      PS_CHECK(sid >= 0) << "invalid sid " << sid;
       int sender = buf.sender;
-      CHECK(sender >= 0) << "invalid sender " << sender;
+      PS_CHECK(sender >= 0) << "invalid sender " << sender;
       int next_sid = next_recv_sids_[sender];
       // check if this is the next sid
       auto& buffs = recv_sid_buffers_[sender];
@@ -1317,7 +1317,7 @@ class UCXVan : public Van {
 
   uint64_t DecodeKey(SArray<char> keys) {
     // Just one key is supported now
-    CHECK_EQ(keys.size(), 8) << "Wrong key size " << keys.size();
+    PS_CHECK_EQ(keys.size(), 8) << "Wrong key size " << keys.size();
     return *(reinterpret_cast<uint64_t*>(keys.data()));
   }
 
@@ -1342,7 +1342,7 @@ class UCXVan : public Van {
             // Send was completed immediately
             delete[] req.user_data;
             if (UCS_PTR_IS_ERR(st)) {
-                LOG(ERROR) << "failed to send data: " << ucs_status_string(UCS_PTR_STATUS(st));
+                PS_PS_LOG(ERROR) << "failed to send data: " << ucs_status_string(UCS_PTR_STATUS(st));
             }
         }
       }

@@ -1,5 +1,6 @@
 /**
  *  Copyright (c) 2015 by Contributors
+ *  Modifications Copyright (C) by StepAI Contributors. 2025.
  */
 #ifndef PS_INTERNAL_MESSAGE_H_
 #define PS_INTERNAL_MESSAGE_H_
@@ -9,7 +10,19 @@
 #include <string>
 #include <vector>
 
+
+#ifdef DMLC_USE_CUDA
+#include <cuda_runtime.h>
+#endif  // DMLC_USE_CUDA
+#ifdef STEPAF_USE_TORCH
+#include <ATen/cuda/CUDAEvent.h>
+#endif  // STEPAF_USE_TORCH
+
 #include "ps/sarray.h"
+#include "trace.h"
+#include "ps/multi_qp.h"
+#include "ps/internal/backend.h"
+
 namespace ps {
 /** \brief data type */
 enum DataType {
@@ -190,10 +203,54 @@ struct Control {
   /** \brief node infos */
   std::vector<Node> node;
   /** \brief the node group for a barrier, such as kWorkerGroup */
-  int barrier_group;
+  int barrier_group = 0;
   /** message signature */
-  uint64_t msg_sig;
+  uint64_t msg_sig = 0;
 };
+
+class TensorEvent {
+ public:
+  TensorEvent() : is_recorded_(false), is_released_(true) {
+    ev_ = Backend::Get()->CreateEvent();
+  }
+
+  ~TensorEvent() {
+    Backend::Get()->FreeEvent(ev_);
+  }
+
+  void Record(void* stream = nullptr) {
+    int result = Backend::Get()->RecordEvent(ev_, stream);
+    is_recorded_ = (result == BACKEND_OK);
+  }
+
+  void Sync() {
+    if (is_recorded_) {
+      int result = Backend::Get()->SyncEvent(ev_);
+      if (result != BACKEND_OK) {
+        PS_LOG(WARNING) << "failed to sync cuda event";
+      }
+    }
+    is_recorded_ = false;
+  }
+
+  void Release() {
+    is_released_ = true;
+  }
+
+  bool Occupy() {
+    if (is_released_) {
+      is_released_ = false;
+      return true;
+    }
+    return false;
+  }
+
+ private:
+  bool is_recorded_;
+  bool is_released_;
+  void* ev_ = nullptr;
+};
+
 /**
  * \brief meta info of a message
  */
@@ -210,7 +267,13 @@ struct Meta {
         recver(kEmpty),
         request(false),
         push(false),
-        simple_app(false) {}
+        simple_app(false),
+        slave_qp_num(0)
+        {
+          FOR_QPS{
+            slave_qp_counter[qpIndex] = 0;
+          }
+        }
   std::string DebugString() const {
     std::stringstream ss;
     if (sender == Node::kEmpty) {
@@ -238,6 +301,7 @@ struct Meta {
       ss << " }";
     }
     if (!control.empty() || simple_app) ss << ". NOT DATA MSG!";
+    ss << "Slave QP Count: " << slave_qp_num;
     return ss.str();
   }
   /** \brief an int head */
@@ -275,16 +339,33 @@ struct Meta {
   /** \brief the byte size */
   int data_size = 0;
   /** \brief the key */
-  uint64_t key;
+  uint64_t key = 0;
   /** \brief the address */
   uint64_t addr = 0;
   /** \brief the value length */
-  int val_len;
+  int val_len = 0;
   /** \brief the optional 4-bytes field */
-  int option;
+  int option = 0;
   /** \brief the sequence id (used by ucx) */
-  int sid;
+  int sid = 0;
+  int8_t is_tensor = 0;
+  int8_t dtype = 0;
+  std::vector<int64_t> shape;
+#ifdef DMLC_USE_CUDA
+  TensorEvent* tensor_ev = nullptr;
+#endif
+#ifdef STEPAF_ENABLE_TRACE
+  // timestamp traces for the request message
+  struct Trace request_trace = {};
+  // timestamp traces for the response message
+  struct Trace response_trace = {};
+#endif
+  /** \brief the slave qp counter for each endpoint */
+  uint64_t slave_qp_counter[QP_MAX_NUM];
+  /** \brief the number of slave qps */
+  int slave_qp_num; 
 };
+
 /**
  * \brief messages that communicated among nodes.
  */
@@ -298,7 +379,7 @@ struct Message {
    */
   template <typename V>
   void AddData(const SArray<V>& val) {
-    CHECK_EQ(data.size(), meta.data_type.size());
+    PS_CHECK_EQ(data.size(), meta.data_type.size());
     meta.data_type.push_back(GetDataType<V>());
     SArray<char> bytes(val);
     meta.data_size += bytes.size();

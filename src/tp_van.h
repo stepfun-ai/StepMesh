@@ -32,7 +32,7 @@ class TPVan : public Van {
  public:
   void Start(int customer_id, bool standalone) {
     start_mu_.lock();
-    CHECK(!standalone);
+    PS_CHECK(!standalone);
     queue_ = std::make_shared<ThreadsafeQueue<Message>>();
     start_mu_.unlock();
     Van::Start(customer_id, standalone);
@@ -62,8 +62,8 @@ class TPVan : public Van {
   }
 
   int Bind(Node& node, int max_retry) override {
-    CHECK(!node.hostname.empty()) << "Empty hostname";
-    CHECK(!send_ctx_ && !recv_ctx_);
+    PS_CHECK(!node.hostname.empty()) << "Empty hostname";
+    PS_CHECK(!send_ctx_ && !recv_ctx_);
     send_ctx_ = InitContext(node);
     recv_ctx_ = InitContext(node);
     std::string addr = "tcp://" + node.hostname + ":" + std::to_string(node.port);
@@ -81,9 +81,9 @@ class TPVan : public Van {
   }
 
   void Connect(const Node& node) override {
-    CHECK_NE(node.id, Node::kEmpty);
-    CHECK_NE(node.port, Node::kEmpty);
-    CHECK(node.hostname.size());
+    PS_CHECK_NE(node.id, Node::kEmpty);
+    PS_CHECK_NE(node.port, Node::kEmpty);
+    PS_CHECK(node.hostname.size());
     int recv_id = node.id;
     if (send_pipes_.find(recv_id) != send_pipes_.end()) {
       return;
@@ -116,7 +116,7 @@ class TPVan : public Van {
   int SendMsg(Message& msg) override {
     std::lock_guard<std::mutex> lk(mu_);
     int recv_id = msg.meta.recver;
-    CHECK_NE(recv_id, Node::kEmpty);
+    PS_CHECK_NE(recv_id, Node::kEmpty);
     auto it = send_pipes_.find(recv_id);
     if (it == send_pipes_.end()) {
       return -1;
@@ -202,7 +202,7 @@ class TPVan : public Van {
         }
         return;
       }
-      CHECK(descriptor.metadata == "ps-lite") << "Invalid connect message.";
+      PS_CHECK(descriptor.metadata == "ps-lite") << "Invalid connect message.";
       tensorpipe::Allocation allocation;
       pipe->read(allocation, [](const tensorpipe::Error &error) {});
       ReceiveFromPipe(pipe);
@@ -222,7 +222,7 @@ class TPVan : public Van {
         return;
       }
       tensorpipe::Allocation allocation;
-      CHECK_EQ(descriptor.payloads.size(), 0) << "Invalid Message";
+      PS_CHECK_EQ(descriptor.payloads.size(), 0) << "Invalid Message";
       int num_sarray = descriptor.tensors.size();
       if (num_sarray > 0) {
         allocation.tensors.resize(num_sarray);
@@ -251,7 +251,7 @@ class TPVan : public Van {
         if (data_size > 0) {
           msg.data.resize(data_size);
           int small_data_size = *reinterpret_cast<int *>(ptr); ptr += sizeof(int);
-          CHECK_EQ(small_data_size + descriptor.tensors.size(), data_size);
+          PS_CHECK_EQ(small_data_size + descriptor.tensors.size(), data_size);
           std::vector<bool> is_small(data_size, false);
           // fill small tensors
           for (int i = 0; i < small_data_size; i++) {

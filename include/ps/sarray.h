@@ -82,7 +82,7 @@ class SArray {
   template <typename W>
   void operator=(const SArray<W>& arr) {
     size_ = arr.size() * sizeof(W) / sizeof(V);
-    CHECK_EQ(size_ * sizeof(V), arr.size() * sizeof(W)) << "cannot be divided";
+    PS_CHECK_EQ(size_ * sizeof(V), arr.size() * sizeof(W)) << "cannot be divided";
     capacity_ = arr.capacity() * sizeof(W) / sizeof(V);
     ptr_ = std::shared_ptr<V>(arr.ptr(), reinterpret_cast<V*>(arr.data()));
     // copy device info
@@ -132,7 +132,7 @@ class SArray {
          DeviceType dst_device_type, int dst_device_id,
          bool deletable = false) {
     if (deletable) {
-      CHECK(src_device_type == CPU);
+      PS_CHECK(src_device_type == CPU);
       reset(
           data, size, [](V* data) { delete[] data; }, src_device_type,
           src_device_id, dst_device_type, dst_device_id);
@@ -285,11 +285,11 @@ class SArray {
   inline const std::shared_ptr<V>& ptr() const { return ptr_; }
 
   inline V back() const {
-    CHECK(!empty());
+    PS_CHECK(!empty());
     return data()[size_ - 1];
   }
   inline V front() const {
-    CHECK(!empty());
+    PS_CHECK(!empty());
     return data()[0];
   }
   inline V& operator[](int i) { return data()[i]; }
@@ -319,8 +319,8 @@ class SArray {
    * @return the segment [begin, end)
    */
   SArray<V> segment(size_t begin, size_t end) const {
-    CHECK_GE(end, begin);
-    CHECK_LE(end, size());
+    PS_CHECK_GE(end, begin);
+    PS_CHECK_LE(end, size());
     SArray<V> ret;
     ret.ptr_ = std::shared_ptr<V>(ptr_, data() + begin);
     ret.size_ = end - begin;
@@ -360,7 +360,7 @@ class SArray {
  * An example
  * \code{cpp}
  * SArray<int> a{1 3 5 7 9};
- * CHECK_EQ(Range(1,3), FindRange(a, 2, 7);
+ * PS_CHECK_EQ(Range(1,3), FindRange(a, 2, 7);
  * \endcode
  *
  * \param arr the source array

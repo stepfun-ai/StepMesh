@@ -74,7 +74,7 @@ class Van {
    * \brief return my node
    */
   inline const Node &my_node() const {
-    CHECK(ready_) << "call Start() first";
+    PS_CHECK(ready_) << "call Start() first";
     return my_node_;
   }
 
@@ -122,7 +122,11 @@ class Van {
   virtual int SendMsg(Message &msg) = 0;
 
   virtual void RegisterRecvBuffer(Message &msg) {
-    CHECK(false) << "recv buffer registration is not supported";
+    PS_CHECK(false) << "recv buffer registration is not supported";
+  }
+
+  virtual void QueryRecvBuffer(uint64_t key, int node_id, void** buffer, size_t* size, uint32_t* rkey) {
+    PS_CHECK(false) << "recv buffer registration is not supported";
   }
 
   /**
@@ -135,7 +139,7 @@ class Van {
       std::function<void(void *data, ErrorCode status, std::string reason)>;
 
   static void set_err_handle(const ErrHandle &err_handle) {
-    CHECK(err_handle) << "invalid error handle";
+    PS_CHECK(err_handle) << "invalid error handle";
     err_handle_ = err_handle;
   }
 
@@ -148,7 +152,7 @@ class Van {
    */
   virtual void PinMemory(void *addr, size_t length, bool is_gpu,
                          int numa_or_gpu_index = 0) {
-    CHECK(false) << "RDMA memory registration is not supported";
+    PS_CHECK(false) << "RDMA memory registration is not supported";
   }
 
   /**

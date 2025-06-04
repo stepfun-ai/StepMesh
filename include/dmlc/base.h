@@ -15,7 +15,7 @@
  * \brief whether throw dmlc::Error instead of
  *  directly calling abort when FATAL error occured
  *  NOTE: this may still not be perfect.
- *  do not use FATAL and CHECK in destructors
+ *  do not use FATAL and PS_CHECK in destructors
  */
 #ifndef DMLC_LOG_FATAL_THROW
 #define DMLC_LOG_FATAL_THROW 1

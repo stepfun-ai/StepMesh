@@ -1,11 +1,14 @@
 /**
  *  Copyright (c) 2018-2019 Bytedance Inc.
  *  Author: zhuyibo@bytedance.com (Yibo Zhu)
+ *  Modifications Copyright (C) by StepAI Contributors. 2025.
  */
 #ifndef PS_LITE_META_H_
-#define PS_LITE_META_H_
+#define  PS_LITE_META_H_
 
 #include <stdint.h>
+
+#include "ps/internal/trace.h"
 
 namespace ps {
 
@@ -89,7 +92,24 @@ struct RawMeta {
   int option;
   // the sequence id
   int sid;
-
+  // is a tensor
+  int is_tensor;
+  // tensor dtype
+  int dtype;
+  // tensor dimension
+  int dim;
+  // tensor shape
+  int64_t shape[8];
+#ifdef STEPAF_ENABLE_TRACE
+  // timestamp traces for the request message
+  struct Trace request_trace;
+  // timestamp traces for the response message
+  struct Trace response_trace;
+#endif
+  // counter fro each qp
+  uint64_t slave_qp_counter[QP_MAX_NUM];
+  // the number of slave qp
+  int slave_qp_num;
   // body
   // data_type
   // node
@@ -97,4 +117,4 @@ struct RawMeta {
 
 }  // namespace ps
 
-#endif
+#endif  // PS_LITE_META_H_

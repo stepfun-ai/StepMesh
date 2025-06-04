@@ -1,6 +1,7 @@
 /**
  *  Copyright (c) 2015 by Contributors
  *  Modifications Copyright (C) Mellanox Technologies Ltd. 2020.
+ *  Modifications Copyright (C) by StepAI Contributors. 2025.
  */
 #include "ps/internal/postoffice.h"
 
@@ -25,9 +26,8 @@ void Postoffice::Init(ps::Node::Role role) {
   if (initialized_) return;
 
   int group_size = 1;
-  auto val = Environment::Get()->find("DMLC_GROUP_SIZE");
-  if (val) group_size = atoi(val);
-  CHECK(group_size >= 1);
+  Environment::Get()->find("DMLC_GROUP_SIZE", &group_size, 1);
+  PS_CHECK(group_size >= 1);
 
   if (role == ps::Node::SCHEDULER) {
     po_scheduler_ = new Postoffice(0);
@@ -48,6 +48,7 @@ void Postoffice::Init(ps::Node::Role role) {
 Postoffice::Postoffice(int instance_idx) {
   env_ref_ = Environment::_GetSharedRef();
   instance_idx_ = instance_idx;
+  started_ = false;
 }
 
 void Postoffice::InitEnvironment() {
@@ -63,17 +64,17 @@ void Postoffice::InitEnvironment() {
   val = Environment::Get()->find("DMLC_GROUP_SIZE");
   group_size_ = val ? atoi(val) : 1;
   if (enable_ucx) {
-    LOG(INFO) << "enable UCX for networking. group_size=" << group_size_;
+    PS_LOG(INFO) << "enable UCX for networking. group_size=" << group_size_;
     van_ = Van::Create("ucx", this);
   } else {
-    LOG(INFO) << "Creating Van: " << van_type << ". group_size=" << group_size_;
+    PS_LOG(INFO) << "Creating Van: " << van_type << ". group_size=" << group_size_;
     van_ = Van::Create(van_type, this);
   }
-  val = CHECK_NOTNULL(Environment::Get()->find("DMLC_NUM_WORKER"));
+  val = PS_CHECK_NOTNULL(Environment::Get()->find("DMLC_NUM_WORKER"));
   num_workers_ = atoi(val);
-  val = CHECK_NOTNULL(Environment::Get()->find("DMLC_NUM_SERVER"));
+  val = PS_CHECK_NOTNULL(Environment::Get()->find("DMLC_NUM_SERVER"));
   num_servers_ = atoi(val);
-  val = CHECK_NOTNULL(Environment::Get()->find("DMLC_ROLE"));
+  val = PS_CHECK_NOTNULL(Environment::Get()->find("DMLC_ROLE"));
   std::string role(val);
   is_worker_ = role == "worker";
   is_server_ = role == "server";
@@ -83,8 +84,9 @@ void Postoffice::InitEnvironment() {
 
 void Postoffice::Start(int customer_id, const Node::Role role, int rank,
                        const bool do_barrier, const char* argv0) {
+  started_ = true;
   // set preferred rank
-  CHECK(rank >= -1) << rank;
+  PS_CHECK(rank >= -1) << rank;
   preferred_rank_ = rank;
 
   start_mu_.lock();
@@ -110,7 +112,7 @@ void Postoffice::Start(int customer_id, const Node::Role role, int rank,
         break;
       }
       default: {
-        CHECK(false) << "Unexpected role=" << role;
+        PS_CHECK(false) << "Unexpected role=" << role;
       }
     }
 
@@ -167,6 +169,9 @@ void Postoffice::Start(int customer_id, const Node::Role role, int rank,
 }
 
 void Postoffice::Finalize(const int customer_id, const bool do_barrier) {
+  if (!started_) {
+    return;
+  }
   if (do_barrier) {
     bool instance_barrier = true;
     DoBarrier(customer_id, kWorkerGroup + kServerGroup + kScheduler,
@@ -188,10 +193,10 @@ void Postoffice::Finalize(const int customer_id, const bool do_barrier) {
 
 void Postoffice::AddCustomer(Customer* customer) {
   std::lock_guard<std::mutex> lk(mu_);
-  int app_id = CHECK_NOTNULL(customer)->app_id();
+  int app_id = PS_CHECK_NOTNULL(customer)->app_id();
   // check if the customer id has existed
-  int customer_id = CHECK_NOTNULL(customer)->customer_id();
-  CHECK_EQ(customers_[app_id].count(customer_id), (size_t)0)
+  int customer_id = PS_CHECK_NOTNULL(customer)->customer_id();
+  PS_CHECK_EQ(customers_[app_id].count(customer_id), (size_t)0)
       << "customer_id " << customer_id << " already exists\n";
   customers_[app_id].insert(std::make_pair(customer_id, customer));
   std::unique_lock<std::mutex> ulk(barrier_mu_);
@@ -200,8 +205,8 @@ void Postoffice::AddCustomer(Customer* customer) {
 
 void Postoffice::RemoveCustomer(Customer* customer) {
   std::lock_guard<std::mutex> lk(mu_);
-  int app_id = CHECK_NOTNULL(customer)->app_id();
-  int customer_id = CHECK_NOTNULL(customer)->customer_id();
+  int app_id = PS_CHECK_NOTNULL(customer)->app_id();
+  int customer_id = PS_CHECK_NOTNULL(customer)->customer_id();
   customers_[app_id].erase(customer_id);
   if (customers_[app_id].empty()) {
     customers_.erase(app_id);
@@ -238,11 +243,11 @@ void Postoffice::DoBarrier(int customer_id, int node_group,
   if (!instance_barrier && node_group_size <= group_size_) return;
   auto role = van_->my_node().role;
   if (role == Node::SCHEDULER) {
-    CHECK(node_group & kScheduler);
+    PS_CHECK(node_group & kScheduler);
   } else if (role == Node::WORKER) {
-    CHECK(node_group & kWorkerGroup);
+    PS_CHECK(node_group & kWorkerGroup);
   } else if (role == Node::SERVER) {
-    CHECK(node_group & kServerGroup);
+    PS_CHECK(node_group & kServerGroup);
   }
   std::unique_lock<std::mutex> ulk(barrier_mu_);
   barrier_done_[0][customer_id] = false;
@@ -255,7 +260,8 @@ void Postoffice::DoBarrier(int customer_id, int node_group,
   req.meta.customer_id = customer_id;
   req.meta.control.barrier_group = node_group;
   req.meta.timestamp = van_->GetTimestamp();
-  CHECK_GT(van_->Send(req), 0);
+  req.data.clear();
+  PS_CHECK_GT(van_->Send(req), 0);
   barrier_cond_.wait(
       ulk, [this, customer_id] { return barrier_done_[0][customer_id]; });
 }
@@ -278,7 +284,7 @@ const std::vector<Range>& Postoffice::GetServerKeyRanges() {
 }
 
 void Postoffice::Manage(const Message& recv) {
-  CHECK(!recv.meta.control.empty());
+  PS_CHECK(!recv.meta.control.empty());
   const auto& ctrl = recv.meta.control;
   bool is_barrier =
       ctrl.cmd == Control::BARRIER || ctrl.cmd == Control::INSTANCE_BARRIER;

@@ -23,7 +23,7 @@ namespace ps {
 #define check_err(ret, msg)                           \
   do {                                                \
     if (ret != 0) {                                   \
-      LOG(FATAL) << msg << ". Return Code: " << ret   \
+      PS_LOG(FATAL) << msg << ". Return Code: " << ret   \
                  << ". ERROR: " << fi_strerror(-ret); \
     }                                                 \
   } while (false)
@@ -171,7 +171,7 @@ class FabricMemoryAllocator {
 
     char *p;
     aligned_malloc((void **)&p, *actual_size);
-    CHECK(p);
+    PS_CHECK(p);
     return p;
   }
 

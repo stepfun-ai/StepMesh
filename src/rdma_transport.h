@@ -1,4 +1,5 @@
 // Copyright 2019 Bytedance Inc. or its affiliates. All Rights Reserved.
+// Modifications Copyright (C) by StepAI Contributors. 2025.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,11 +15,20 @@
 // =============================================================================
 
 #ifndef PS_RDMA_TRANSPORT_H_
-#define PS_RDMA_TRANSPORT_H_
+#define  PS_RDMA_TRANSPORT_H_
 
 #ifdef DMLC_USE_RDMA
 
+#include <cstddef>
+#include <mutex>
+#include <condition_variable>
+#include <string>
+
 #include "rdma_utils.h"
+#include "ibvwarp.h"
+#include "dmlc/logging.h"
+
+#include "ps/multi_qp.h"
 
 namespace ps {
 
@@ -28,15 +38,19 @@ class Transport;
 struct Endpoint {
   enum ConnectionStatus { IDLE, CONNECTING, CONNECTED, REJECTED };
 
-  ConnectionStatus status;
+  ConnectionStatus status_list[QP_MAX_NUM];
+  uint64_t qp_pkt_count[QP_MAX_NUM];
   int node_id;
   std::condition_variable cv;
   std::mutex connect_mu;
-  struct rdma_cm_id *cm_id;
+  struct rdma_cm_id *cm_ids[QP_MAX_NUM];
+  struct rdma_cm_id* master_id;
   std::shared_ptr<Transport> trans;
+  bool multi_qp_ = false;
 
+  int inComingCount = 0;
   int kStartDepth = 128;
-  int kRxDepth = 2048;
+  int kRxDepth = 256;
   int kReplyDepth = kRxDepth;
   WRContext *rx_ctx;
   WRContext *start_ctx;
@@ -45,13 +59,21 @@ struct Endpoint {
   ThreadsafeQueue<WRContext *> free_start_ctx;
   ThreadsafeQueue<WRContext *> free_reply_ctx;
 
-  bool inited = false;
+  uint8_t inited = 0;
 
-  Endpoint() : status(IDLE), node_id(Node::kEmpty), cm_id(nullptr), rx_ctx() {
+  Endpoint() : node_id(Node::kEmpty), rx_ctx() {
+    if (wrap_ibv_symbols() != 1) {
+      PS_LOG(WARNING) << "Load mlx5 symbols fails.";
+    }
+    FOR_QPS {
+      cm_ids[qpIndex] = nullptr;
+      status_list[qpIndex] = IDLE;
+      qp_pkt_count[qpIndex] = 0;
+    }
     auto byteps_rx_depth = Environment::Get()->find("BYTEPS_RDMA_RX_DEPTH");
     auto byteps_start_depth =
         Environment::Get()->find("BYTEPS_RDMA_START_DEPTH");
-    const char *role_val = CHECK_NOTNULL(Environment::Get()->find("DMLC_ROLE"));
+    const char *role_val = PS_CHECK_NOTNULL(Environment::Get()->find("DMLC_ROLE"));
     std::string role_str(role_val);
     // for joint mode with large number of workers, the default value of rx/tx
     // depth is reduced for less memory consumption.
@@ -74,35 +96,52 @@ struct Endpoint {
         continue;
       }
       free(rx_ctx[i].buffer->addr);
-      CHECK_EQ(ibv_dereg_mr(rx_ctx[i].buffer), 0);
+      PS_CHECK_EQ(ibv_dereg_mr(rx_ctx[i].buffer), 0);
     }
 
     for (int i = 0; i < kStartDepth; ++i) {
       if (start_ctx[i].buffer) {
         free(start_ctx[i].buffer->addr);
-        CHECK_EQ(ibv_dereg_mr(start_ctx[i].buffer), 0);
+        PS_CHECK_EQ(ibv_dereg_mr(start_ctx[i].buffer), 0);
       }
     }
 
     for (int i = 0; i < kReplyDepth; ++i) {
       if (reply_ctx[i].buffer) {
         free(reply_ctx[i].buffer->addr);
-        CHECK_EQ(ibv_dereg_mr(reply_ctx[i].buffer), 0);
+        PS_CHECK_EQ(ibv_dereg_mr(reply_ctx[i].buffer), 0);
       }
     }
-
-    rdma_destroy_qp(cm_id);
-    CHECK_EQ(rdma_destroy_id(cm_id), 0) << strerror(errno);
+    FOR_QPS {
+      rdma_destroy_qp(cm_ids[qpIndex]);
+      PS_CHECK_EQ(rdma_destroy_id(cm_ids[qpIndex]), 0) << strerror(errno);
+    }
   }
 
   void SetTransport(std::shared_ptr<Transport> t) { trans = t; }
 
   std::shared_ptr<Transport> GetTransport() { return trans; }
 
+  bool GetAllStatus(ConnectionStatus s) {
+    bool ret = true;
+    FOR_QPS { ret &= (s == status_list[qpIndex]); }
+    return ret;
+  }
+
+  void SetAllStatus(ConnectionStatus s) {
+    FOR_QPS { status_list[qpIndex] = s; }
+  }
+
   void Disconnect() {
     std::unique_lock<std::mutex> lk(connect_mu);
-    CHECK_EQ(rdma_disconnect(cm_id), 0) << strerror(errno);
-    cv.wait(lk, [this] { return status == IDLE; });
+    FOR_QPS {
+      PS_CHECK_EQ(rdma_disconnect(cm_ids[qpIndex]), 0) << strerror(errno);
+    }
+    cv.wait(lk, [this] {
+      bool ret = true;
+      FOR_QPS { ret &= (status_list[qpIndex] == IDLE); }
+      return ret;
+    });
     trans.reset();
   }
 
@@ -114,9 +153,9 @@ struct Endpoint {
     for (size_t i = 0; i < num; ++i) {
       void *buf;
       aligned_malloc((void **)&buf, kMempoolChunkSize);
-      CHECK(buf);
+      PS_CHECK(buf);
       struct ibv_mr *mr = ibv_reg_mr(pd, buf, kMempoolChunkSize, 0);
-      CHECK(mr) << "ibv_reg_mr failed: " << strerror(errno)
+      PS_CHECK(mr) << "ibv_reg_mr failed: " << strerror(errno)
                 << "\nYou can try to reduce BYTEPS_RDMA_START_DEPTH (current "
                 << kStartDepth << ") or BYTEPS_RDMA_RX_DEPTH (current "
                 << kRxDepth << ").";
@@ -128,7 +167,7 @@ struct Endpoint {
     }
   }
 
-  void Init(struct ibv_cq *cq, struct ibv_pd *pd) {
+  void Init(struct ibv_cq *cq, struct ibv_pd *pd, rdma_cm_id *id = nullptr) {
     struct ibv_qp_init_attr attr;
     memset(&attr, 0, sizeof(ibv_qp_init_attr));
     attr.send_cq = cq;
@@ -137,27 +176,30 @@ struct Endpoint {
     attr.cap.max_recv_wr = kRxDepth;
     attr.cap.max_send_sge = kSGEntry;
     attr.cap.max_recv_sge = kSGEntry;
+    attr.cap.max_inline_data = 256;
     attr.qp_type = IBV_QPT_RC;
     attr.sq_sig_all = 0;
-
-    CHECK_EQ(rdma_create_qp(cm_id, pd, &attr), 0)
+    PS_CHECK_EQ(rdma_create_qp(id, pd, &attr), 0)
         << "Create RDMA queue pair failed: " << strerror(errno);
+    id->pd = pd;
 
-    if (inited == false) {
+    PS_LOG(TRACE) << "qp created: pd: "<< pd <<  " , cq:" << cq << ", qp: " <<  id->qp->qp_num;
+    
+    if (inited == 0) {
       InitSendContextHelper(pd, start_ctx, &free_start_ctx, kStartDepth,
                             kRendezvousStartContext);
       InitSendContextHelper(pd, reply_ctx, &free_reply_ctx, kReplyDepth,
                             kRendezvousReplyContext);
     }
 
-    for (int i = 0; i < kRxDepth; ++i) {
-      if (inited == false) {
+    for (int i = 0; i < kRxDepth ; ++i) {
+      if (inited == 0) {
         void *buf;
         aligned_malloc((void **)&buf, kMempoolChunkSize);
-        CHECK(buf);
+        PS_CHECK(buf);
         struct ibv_mr *mr =
             ibv_reg_mr(pd, buf, kMempoolChunkSize, IBV_ACCESS_LOCAL_WRITE);
-        CHECK(mr)
+        PS_CHECK(mr)
             << "ibv_reg_mr failed: " << strerror(errno)
             << "\nYou can try to reduce BYTEPS_RDMA_START_DEPTH (default 128)"
             << " or BYTEPS_RDMA_RX_DEPTH (default 2048)";
@@ -166,13 +208,58 @@ struct Endpoint {
         rx_ctx[i].buffer = mr;
         rx_ctx[i].private_data = this;
       }
-
-      PostRecv(&rx_ctx[i]);
     }
-    inited = true;
+    for(int i = 0 ; i < kRxDepth/QP_NUM; ++i){
+      if (inited < QP_NUM) {
+        PostRecv(&rx_ctx[i + inited * QP_NUM], id);
+      }
+    }
+    inited++;
   }
 
-  void PostRecv(WRContext *ctx) {
+  int GetLag(int local_id, int rem_id) {
+    int qp_lag = 1;
+    if (local_id == 1 || rem_id == 1) {
+      // 与 scheduler相关的连接
+      qp_lag = 1;
+    } else if (local_id == rem_id) {
+      qp_lag = 1 + (!((rem_id >> 1) & 0x1));
+    } else if ((local_id & 0x1) == 0) {
+      // server端
+      qp_lag = 1 + ((rem_id >> 1) & 0x1);
+    } else if ((local_id & 0x1) == 1) {
+      // worker端
+      qp_lag = 1 + ((local_id >> 1) & 0x1);
+    }
+    return qp_lag;
+  }
+
+  void SetQPLag(int local_id, int rem_id) {
+    auto qp_split_val = Environment::Get()->find("DMLC_SPLIT_QP_LAG");
+    int val = qp_split_val ? atoi(qp_split_val) : -1;
+
+    if (val == 1) {
+      multi_qp_ = true;
+      FOR_QPS {
+        int lag = 1 + qpIndex%2;
+        int ret = wrap_mlx5dv_modify_qp_lag_port(cm_ids[qpIndex]->qp, lag);
+        if (ret != 1) {
+          PS_LOG(INFO) << "Failed to mlx5dv_modify_qp_lag_port qp ["
+                       << cm_ids[qpIndex]->qp->qp_num << "] to port: " << lag
+                       << ", qp type: " << cm_ids[qpIndex]->qp->qp_type;
+        } else {
+          uint8_t setPort = 0xff, actPort = 0xff;
+          wrap_mlx5dv_query_qp_lag_port(cm_ids[qpIndex]->qp, &setPort, &actPort);
+          PS_LOG(INFO) << "QP LAG Port: QP: " << cm_ids[qpIndex]->qp->qp_num
+                     << ", Modify Port: " << lag
+                     << ", Set to Port: " << (int)setPort
+                     << ", Active Port: " << (int)actPort;
+        }
+      }
+    }
+  }
+
+  void PostRecv(WRContext *ctx, rdma_cm_id* id) {
     struct ibv_recv_wr wr, *bad_wr = nullptr;
     memset(&wr, 0, sizeof(wr));
 
@@ -185,16 +272,18 @@ struct Endpoint {
     wr.next = nullptr;
     wr.sg_list = &sge;
     wr.num_sge = 1;
-
-    CHECK_EQ(ibv_post_recv(cm_id->qp, &wr, &bad_wr), 0)
-        << "ibv_post_recv failed.";
+    
+    PS_CHECK_EQ(ibv_post_recv(id->qp, &wr, &bad_wr), 0)
+        << "ibv_post_recv failed. qp_num:" << id->qp->qp_num << strerror(errno);
   }
 };
 
 class Transport {
  public:
   virtual void RDMAWriteWithImm(MessageBuffer *msg_buf, uint64_t remote_addr,
-                                uint32_t rkey, uint32_t idx) = 0;
+                                uint32_t rkey, uint32_t idx,
+                                bool inline_write = false,
+                                struct ibv_send_wr* prev_wr = nullptr) = 0;
 
   virtual int RecvPushRequest(Message *msg, BufferContext *buffer_ctx,
                               int meta_len) = 0;
@@ -218,8 +307,11 @@ class Transport {
   virtual void SendRendezvousBegin(Message &msg, MessageBuffer *msg_buf) = 0;
   virtual void SendRendezvousReply(RendezvousStart *req,
                                    AddressPool<BufferContext> &pool) = 0;
-
   virtual SArray<char> CreateFunctionalSarray(void *value, size_t size) = 0;
+
+  virtual void RegisterRecvBuffer(Message &msg) {
+    PS_CHECK(0) << "RegisterRecvBuffer is not implemented";
+  }
 
 };  // class Transport
 
@@ -227,24 +319,48 @@ class RDMATransport : public Transport {
  public:
   explicit RDMATransport(Endpoint *endpoint, MemoryAllocator *allocator,
                          Postoffice *postoffice) {
-    endpoint_ = CHECK_NOTNULL(endpoint);
-    allocator_ = CHECK_NOTNULL(allocator);
+    endpoint_ = PS_CHECK_NOTNULL(endpoint);
+    allocator_ = PS_CHECK_NOTNULL(allocator);
     pagesize_ = sysconf(_SC_PAGESIZE);
 
     postoffice_ = postoffice;
     is_server_ = postoffice_->is_server();
-  };
+#ifdef STEPAF_USE_GDR
+    if (is_server_) {
+      // Get the current GPU device ID directly from the CUDA runtime.
+      // This relies on the launcher (e.g., mpirun) setting
+      // CUDA_VISIBLE_DEVICES correctly for process-to-GPU affinity.
+      int gpu_id = -1;
+      Environment::Get()->find("STEPAF_GPU", &gpu_id, gpu_id);
+      PS_CHECK_GE(gpu_id, 0) << "failed to get gpu id, please set STEPAF_GPU";
+      Backend::Get()->SetDevice(gpu_id);
+      mem_allocator_ =
+          new BackendMemoryAllocator(endpoint_->cm_ids[0]->pd, gpu_id);
+    } else {
+      mem_allocator_ = nullptr;
+    }
+#else
+    mem_allocator_ = nullptr;
+#endif  // STEPAF_USE_GDR
+  }
 
-  ~RDMATransport(){};
+  ~RDMATransport() {
+    if (mem_allocator_) {
+      delete mem_allocator_;
+      mem_allocator_ = nullptr;
+    }
+  }
 
   virtual void RDMAWriteWithImm(MessageBuffer *msg_buf, uint64_t remote_addr,
-                                uint32_t rkey, uint32_t idx) {
+                                uint32_t rkey, uint32_t idx,
+                                bool inline_write = false,
+                                struct ibv_send_wr* prev_wr = nullptr) {
     struct ibv_sge sge;
     sge.addr = reinterpret_cast<uint64_t>(msg_buf->inline_buf);
     sge.length = msg_buf->inline_len;
     sge.lkey = allocator_->LocalKey(msg_buf->inline_buf);
 
-    struct ibv_send_wr wr, *bad_wr = nullptr;
+    struct ibv_send_wr wr = {}, *bad_wr = nullptr;
     memset(&wr, 0, sizeof(wr));
     wr.wr_id = reinterpret_cast<uint64_t>(msg_buf);
     wr.opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
@@ -256,8 +372,18 @@ class RDMATransport : public Transport {
     wr.wr.rdma.remote_addr = remote_addr;
     wr.wr.rdma.rkey = rkey;
 
-    CHECK_EQ(ibv_post_send(endpoint_->cm_id->qp, &wr, &bad_wr), 0)
-        << "ibv_post_send failed.";
+    if (inline_write) {
+      wr.send_flags |= IBV_SEND_INLINE;
+    }
+
+    if (prev_wr == nullptr) {
+      PS_CHECK_EQ(ibv_post_send(endpoint_->cm_ids[0]->qp, &wr, &bad_wr), 0)
+          << "ibv_post_send failed.";
+    } else {
+      prev_wr->next = &wr;
+      PS_CHECK_EQ(ibv_post_send(endpoint_->cm_ids[0]->qp, prev_wr, &bad_wr), 0)
+          << "ibv_post_send failed.";
+    }
   }
 
   void SendRendezvousBegin(Message &msg, MessageBuffer *msg_buf) {
@@ -269,6 +395,7 @@ class RDMATransport : public Transport {
     req->meta_len = msg_buf->inline_len;
     req->origin_addr = reinterpret_cast<uint64_t>(msg_buf);
     req->data_num = msg_buf->data.size();
+    req->key = msg.meta.key;
     for (size_t i = 0; i < req->data_num; ++i) {
       req->data_len[i] = msg.data[i].size();
     }
@@ -288,7 +415,7 @@ class RDMATransport : public Transport {
     wr.sg_list = &sge;
     wr.num_sge = 1;
 
-    CHECK_EQ(ibv_post_send(endpoint_->cm_id->qp, &wr, &bad_wr), 0)
+    PS_CHECK_EQ(ibv_post_send(endpoint_->cm_ids[0]->qp, &wr, &bad_wr), 0)
         << strerror(errno);
   }
 
@@ -299,119 +426,361 @@ class RDMATransport : public Transport {
     buf_ctx->data_num = req->data_num;
 
     size_t data_len = 0;
+
     for (size_t i = 0; i < req->data_num; ++i) {
       buf_ctx->data_len[i] = req->data_len[i];
       data_len += req->data_len[i];
     }
 
-    // worker only needs a buffer for receving meta
-    char *buffer = allocator_->Alloc(
-        is_server_ ? (align_ceil(req->meta_len, pagesize_) + data_len)
-                   : req->meta_len);
-    CHECK(buffer);
+#ifdef STEPAF_USE_GDR
+    if (is_server_) {
+      // Server-side GDR: Allocate separate CPU meta buffer and GPU data buffer
+      PS_VLOG(2) << "SendRendezvousReply (GDR Server): meta_len="
+                 << req->meta_len << ", data_len=" << data_len;
+      // 1. Allocate CPU buffer for metadata
+      buf_ctx->meta_buffer = allocator_->Alloc(req->meta_len);
+      PS_CHECK(buf_ctx->meta_buffer)
+          << "Failed to allocate CPU metadata buffer. Size: " << req->meta_len;
+
+      uint32_t rkey = 0;
+      if (data_len > 0) {
+        // 2. Allocate GPU buffer for data
+        size_t size = 0;
+        postoffice_->van()->QueryRecvBuffer(
+            req->key, this->endpoint_->node_id,
+            &buf_ctx->gpu_data_buffer, &size, &rkey);
+        if (buf_ctx->gpu_data_buffer == nullptr) {
+          PS_LOG(INFO) << "Alloc new gpu buffer: key=" << req->key
+                       << ", size=" << req->data_len[1];
+          buf_ctx->gpu_data_buffer =
+              mem_allocator_->Alloc(req->key, req->data_len[1]);
+          rkey = mem_allocator_->GetRemoteKey(req->key);
+        } else {
+          PS_LOG(INFO) << "Using pre-registered gpu buffer: key=" << req->key
+                       << ", size=" << req->data_len[1];
+          PS_CHECK(size >= req->data_len[1]);
+          PS_CHECK(rkey != 0);
+        }
+
+        PS_CHECK(buf_ctx->gpu_data_buffer)
+            << "Failed to allocate GPU data buffer. Size: " << data_len;
+      } else {
+        buf_ctx->gpu_data_buffer = nullptr;
+      }
+
+      WRContext *reply_ctx_ptr = nullptr;
+      endpoint_->free_reply_ctx.WaitAndPop(&reply_ctx_ptr);
+      RendezvousReply *resp = reinterpret_cast<RendezvousReply *>(reply_ctx_ptr->buffer->addr);
+
+      // Populate reply with addresses and rkeys for both buffers
+      resp->meta_addr = reinterpret_cast<uint64_t>(buf_ctx->meta_buffer);
+      resp->meta_rkey = allocator_->RemoteKey(buf_ctx->meta_buffer);
+
+      if (data_len > 0) {
+        resp->data_addr = reinterpret_cast<uint64_t>(buf_ctx->gpu_data_buffer);
+        resp->data_rkey = rkey;
+      } else {
+        resp->data_addr = 0;
+        resp->data_rkey = 0;
+      }
+      resp->origin_addr = req->origin_addr;
+      resp->idx = addrpool.StoreAddress(buf_ctx);
+
+      PS_VLOG(2) << "GDR Server Reply: meta_addr=" << resp->meta_addr
+                 << " meta_rkey=" << resp->meta_rkey
+                 << ", data_addr=" << resp->data_addr
+                 << " data_rkey=" << resp->data_rkey;
+
+      // Send the reply
+      struct ibv_sge sge;
+      sge.addr = reinterpret_cast<uint64_t>(resp);
+      sge.length = sizeof(RendezvousReply);
+      sge.lkey = reply_ctx_ptr->buffer->lkey;
+      struct ibv_send_wr wr, *bad_wr = nullptr;
+      memset(&wr, 0, sizeof(wr));
+      wr.wr_id = reinterpret_cast<uint64_t>(reply_ctx_ptr);
+      wr.opcode = IBV_WR_SEND_WITH_IMM;
+      wr.next = nullptr;
+      wr.imm_data = kRendezvousReply;
+      wr.send_flags = IBV_SEND_SIGNALED;
+      wr.sg_list = &sge;
+      wr.num_sge = 1;
+      PS_CHECK_EQ(ibv_post_send(endpoint_->cm_ids[0]->qp, &wr, &bad_wr), 0)
+          << "ibv_post_send failed.";
+
+      return;  // Early return for server-side GDR path
+    }
+#endif  // STEPAF_USE_GDR
+
+    // Original logic for non-GDR or for client-side GDR (which only receives meta)
+    size_t buffer_size = is_server_ ? (align_ceil(req->meta_len, pagesize_) + data_len)
+                                      : req->meta_len;
+    char* buffer = allocator_->Alloc(buffer_size);
+    PS_CHECK(buffer);
     buf_ctx->buffer = buffer;
 
-    WRContext *reply_ctx = nullptr;
-    endpoint_->free_reply_ctx.WaitAndPop(&reply_ctx);
+    WRContext *reply_ctx_ptr = nullptr;
+    endpoint_->free_reply_ctx.WaitAndPop(&reply_ctx_ptr);
+    RendezvousReply *resp = reinterpret_cast<RendezvousReply*>(
+        reply_ctx_ptr->buffer->addr);
 
-    RendezvousReply *resp =
-        reinterpret_cast<RendezvousReply *>(reply_ctx->buffer->addr);
-
+    // In GDR mode, client still uses single buffer logic,
+    // so we populate the single addr/rkey
+#ifdef STEPAF_USE_GDR
+    resp->meta_addr = reinterpret_cast<uint64_t>(buffer);
+    resp->meta_rkey = allocator_->RemoteKey(buffer);
+    resp->data_addr = 0;  // Not used by client
+    resp->data_rkey = 0;  // Not used by client
+#else
     resp->addr = reinterpret_cast<uint64_t>(buffer);
     resp->rkey = allocator_->RemoteKey(buffer);
+#endif
     resp->origin_addr = req->origin_addr;
     resp->idx = addrpool.StoreAddress(buf_ctx);
 
     struct ibv_sge sge;
     sge.addr = reinterpret_cast<uint64_t>(resp);
     sge.length = sizeof(RendezvousReply);
-    sge.lkey = reply_ctx->buffer->lkey;
-
+    sge.lkey = reply_ctx_ptr->buffer->lkey;
     struct ibv_send_wr wr, *bad_wr = nullptr;
     memset(&wr, 0, sizeof(wr));
-
-    wr.wr_id = reinterpret_cast<uint64_t>(reply_ctx);
+    wr.wr_id = reinterpret_cast<uint64_t>(reply_ctx_ptr);
     wr.opcode = IBV_WR_SEND_WITH_IMM;
     wr.next = nullptr;
-
     wr.imm_data = kRendezvousReply;
-
     wr.send_flags = IBV_SEND_SIGNALED;
     wr.sg_list = &sge;
     wr.num_sge = 1;
 
-    CHECK_EQ(ibv_post_send(endpoint_->cm_id->qp, &wr, &bad_wr), 0)
+    PS_CHECK_EQ(ibv_post_send(endpoint_->cm_ids[0]->qp, &wr, &bad_wr), 0)
         << "ibv_post_send failed.";
   }
 
   void Send(Message &msg, MessageBuffer *msg_buf, RemoteTuple remote_tuple) {
+#ifdef STEPAF_USE_GDR
+    auto raddr = std::get<0>(remote_tuple);
+    auto rkey = std::get<1>(remote_tuple);
+    auto idx = std::get<4>(remote_tuple);
+#else
     auto raddr = std::get<0>(remote_tuple);
     auto rkey = std::get<1>(remote_tuple);
     auto idx = std::get<2>(remote_tuple);
+#endif
 
-    RDMAWriteWithImm(msg_buf, raddr, rkey, idx);
+    RDMAWriteWithImm(msg_buf, raddr, rkey, idx, true, nullptr);
   }
 
   void SendPushRequest(Message &msg, MessageBuffer *msg_buf,
                        RemoteTuple remote_tuple) {
-    CHECK_EQ(msg_buf->mrs.size(), 1);
+    
+    PS_CHECK_EQ(msg_buf->mrs.size(), 1);
+    PS_CHECK(msg.data.size() >= 2);
+    PS_CHECK(msg.data[1].size() <= msg_buf->mrs[0].second);
+
+#ifdef STEPAF_USE_GDR
+    auto meta_raddr = std::get<0>(remote_tuple);
+    auto meta_rkey = std::get<1>(remote_tuple);
+    auto data_raddr = std::get<2>(remote_tuple);
+    auto data_rkey = std::get<3>(remote_tuple);
+    auto idx = std::get<4>(remote_tuple);
+#else
+    auto meta_raddr = std::get<0>(remote_tuple);
+    auto meta_rkey = std::get<1>(remote_tuple);
+    auto idx = std::get<2>(remote_tuple);
+    auto data_raddr = meta_raddr +  align_ceil(msg_buf->inline_len,pagesize_);
+    auto data_rkey = meta_rkey;
+#endif
+    
+    struct ibv_sge data_sge;
+    struct ibv_send_wr data_wr, *bad_wr = nullptr;
+
+    data_sge.addr = reinterpret_cast<uint64_t>(msg_buf->mrs[0].first->addr);
+    data_sge.length = msg.data[1].size();
+    data_sge.lkey = msg_buf->mrs[0].first->lkey;
+
+    memset(&data_wr, 0, sizeof(data_wr));
+    data_wr.wr_id = 0 ;//data_sge.addr;  // No completion notification for this
+    data_wr.opcode = IBV_WR_RDMA_WRITE;
+    data_wr.next = nullptr;
+    data_wr.sg_list = &data_sge;
+    data_wr.num_sge = 1;
+    data_wr.wr.rdma.rkey = data_rkey;
+    data_wr.wr.rdma.remote_addr = data_raddr;
+
+    if (endpoint_->multi_qp_) {
+      uint32_t chunk_size = msg.data[1].size() / QP_NUM;
+      data_sge.length = chunk_size + msg.data[1].size() % QP_NUM;
+
+      // QP 0 Meta
+      RawMeta *meta = (RawMeta *)msg_buf->inline_buf;
+      meta->slave_qp_num = QP_NUM - 1;
+      FOR_QPS {
+        endpoint_->qp_pkt_count[qpIndex]++;
+        meta->slave_qp_counter[qpIndex] = endpoint_->qp_pkt_count[qpIndex];
+        PS_LOG(ALL) << "Push Request, QP: "
+                   << endpoint_->cm_ids[qpIndex]->qp->qp_num << "Counter"
+                   << endpoint_->qp_pkt_count[qpIndex];
+      }
+      PS_CHECK_EQ(ibv_post_send(endpoint_->cm_ids[0]->qp, &data_wr, &bad_wr), 0)
+            << "ibv_post_send failed.";
+      RDMAWriteWithImm(msg_buf, meta_raddr, meta_rkey, idx, true, nullptr);
+
+      data_wr.wr.rdma.remote_addr += data_sge.length;
+      data_sge.addr += data_sge.length;
+      data_sge.length = chunk_size;
+      uint32_t slave_idx = idx | 0x8000;
+
+      for (int qpIndex = 1; qpIndex < QP_NUM; qpIndex++) {
+        data_wr.wr_id = reinterpret_cast<uint64_t>(msg_buf);
+        data_wr.opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
+        data_wr.imm_data = slave_idx;
+        data_wr.send_flags = IBV_SEND_SIGNALED;
+
+        PS_CHECK_EQ(
+            ibv_post_send(endpoint_->cm_ids[qpIndex]->qp, &data_wr, &bad_wr), 0)
+            << "ibv_post_send failed.";
+
+        data_wr.wr.rdma.remote_addr += data_sge.length;
+        data_sge.addr += data_sge.length;
+      }
+    } else {
+      RDMAWriteWithImm(msg_buf, meta_raddr, meta_rkey, idx, true, &data_wr);
+    }
+  }
+
+  virtual void SendPushRequestFast(Message &msg, MessageBuffer *msg_buf,
+                                   RemoteTuple remote_tuple) {
+    PS_CHECK_EQ(msg_buf->mrs.size(), 1);
     auto raddr = std::get<0>(remote_tuple);
     auto rkey = std::get<1>(remote_tuple);
     auto idx = std::get<2>(remote_tuple);
 
-    // push request, split the meta and data into two writes
-    // further, it does not send keys and lens since these meta already carries
-    // these info
-    struct ibv_sge my_sge;
-    my_sge.addr = reinterpret_cast<uint64_t>(msg_buf->mrs[0].first->addr);
+    struct ibv_sge sge;
+    sge.addr = reinterpret_cast<uint64_t>(msg_buf->mrs[0].first->addr);
     // support variable data length
-    CHECK(msg.data.size() == 3);
+    PS_CHECK(msg.data.size() == 3);
     // the data size sent this time must be no larger than the one we registered
     // the first time
-    CHECK(msg.data[1].size() <= msg_buf->mrs[0].second);
-    my_sge.length = msg.data[1].size();
-    my_sge.lkey = msg_buf->mrs[0].first->lkey;
+    PS_CHECK(msg.data[1].size() <= msg_buf->mrs[0].second);
+    sge.length = msg.data[1].size();
+    sge.lkey = msg_buf->mrs[0].first->lkey;
 
-    // this rdma-write will not trigger any signal both remotely and locally
     struct ibv_send_wr wr, *bad_wr = nullptr;
     memset(&wr, 0, sizeof(wr));
-    wr.wr_id = 0;
-    wr.opcode = IBV_WR_RDMA_WRITE;
+    wr.wr_id = reinterpret_cast<uint64_t>(msg_buf);
+    wr.opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
+    wr.imm_data = idx | (msg.meta.head << 16) | (1 << 24);
     wr.next = nullptr;
-    wr.sg_list = &my_sge;
+    wr.sg_list = &sge;
     wr.num_sge = 1;
     wr.wr.rdma.rkey = rkey;
-
-    // write to the next page-aligned address (remote_addr should already be
-    // aligned)
+    wr.send_flags = 0;
     wr.wr.rdma.remote_addr = raddr + align_ceil(msg_buf->inline_len, pagesize_);
 
-    CHECK_EQ(ibv_post_send(endpoint_->cm_id->qp, &wr, &bad_wr), 0)
-        << "ibv_post_send failed.";
-
+    PS_CHECK_EQ(ibv_post_send(endpoint_->cm_ids[0]->qp, &wr, &bad_wr), 0)
+         << "ibv_post_send failed.";
     RDMAWriteWithImm(msg_buf, raddr, rkey, idx);
   }
 
   void SendPullRequest(Message &msg, MessageBuffer *msg_buf,
                        RemoteTuple remote_tuple) {
-    CHECK_EQ(msg_buf->mrs.size(), 0);
+    PS_CHECK_EQ(msg_buf->mrs.size(), 0);
     Send(msg, msg_buf, remote_tuple);
   }
 
   virtual void SendPushResponse(Message &msg, MessageBuffer *msg_buf,
                                 RemoteTuple remote_tuple) {
-    CHECK_EQ(msg_buf->mrs.size(), 0);
+    PS_CHECK_EQ(msg_buf->mrs.size(), 0);
     Send(msg, msg_buf, remote_tuple);
   }
 
   virtual void SendPullResponse(Message &msg, MessageBuffer *msg_buf,
                                 RemoteTuple remote_tuple, size_t lkey) {
-    CHECK_EQ(msg_buf->mrs.size(), 0);
+    PS_CHECK_EQ(msg_buf->mrs.size(), 0);
+
+    auto data_raddr = msg.meta.addr;
+    auto data_rkey = msg.meta.option;
+    auto data_len = msg.meta.val_len;
+    PS_CHECK_EQ((size_t)msg.meta.val_len, msg_buf->data[1].size());
+
+    struct ibv_sge data_sge;
+    data_sge.addr = reinterpret_cast<uint64_t>(msg_buf->data[1].data());
+    data_sge.length = data_len;
+    data_sge.lkey = lkey;
+#ifdef STEPAF_USE_GDR
+    auto meta_raddr = std::get<0>(remote_tuple);
+    auto meta_rkey = std::get<1>(remote_tuple);
+    auto idx = std::get<4>(remote_tuple);
+#else
+    auto meta_raddr = std::get<0>(remote_tuple);
+    auto meta_rkey = std::get<1>(remote_tuple);
+    auto idx = std::get<2>(remote_tuple);
+#endif
+
+    // this rdma-write will not trigger any signal both remotely and locally
+    struct ibv_send_wr data_wr, *bad_wr = nullptr;
+    memset(&data_wr, 0, sizeof(data_wr));
+    data_wr.wr_id = reinterpret_cast<uint64_t>(data_raddr);
+    data_wr.opcode = IBV_WR_RDMA_WRITE;
+    data_wr.next = nullptr;
+    data_wr.sg_list = &data_sge;
+    data_wr.num_sge = 1;
+    data_wr.wr.rdma.remote_addr = data_raddr;
+    data_wr.wr.rdma.rkey = data_rkey;
+
+    if(endpoint_->multi_qp_){
+      uint32_t chunk_size = data_len / QP_NUM;
+      data_sge.length = chunk_size + data_len % QP_NUM;
+      RawMeta *meta = (RawMeta *)msg_buf->inline_buf;
+      meta->slave_qp_num = QP_NUM - 1;
+      FOR_QPS {
+        endpoint_->qp_pkt_count[qpIndex]++;
+        meta->slave_qp_counter[qpIndex] = endpoint_->qp_pkt_count[qpIndex];
+        PS_LOG(ALL)  << "Push Request, QP: "
+                   << endpoint_->cm_ids[qpIndex]->qp->qp_num << "Counter"
+                   << endpoint_->qp_pkt_count[qpIndex];
+      }
+      PS_CHECK_EQ(ibv_post_send(endpoint_->cm_ids[0]->qp, &data_wr, &bad_wr), 0)
+            << "ibv_post_send failed.";
+      RDMAWriteWithImm(msg_buf, meta_raddr, meta_rkey, idx, true, nullptr);//, &data_wr);
+
+      data_wr.wr.rdma.remote_addr += data_sge.length;
+      data_sge.addr += data_sge.length;
+      data_sge.length = chunk_size;
+      uint32_t slave_idx = idx | 0x8000;
+
+      for (int qpIndex = 1; qpIndex < QP_NUM; qpIndex++) {
+        data_wr.wr_id = reinterpret_cast<uint64_t>(msg_buf);
+        data_wr.opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
+        data_wr.imm_data = slave_idx;
+        data_wr.send_flags = IBV_SEND_SIGNALED;
+
+        PS_CHECK_EQ(
+            ibv_post_send(endpoint_->cm_ids[qpIndex]->qp, &data_wr, &bad_wr), 0)
+            << "ibv_post_send failed.";
+
+        data_wr.wr.rdma.remote_addr += data_sge.length;
+        data_sge.addr += data_sge.length;
+      }
+    }
+    else{
+      PS_CHECK_EQ(ibv_post_send(endpoint_->cm_ids[0]->qp, &data_wr, &bad_wr), 0)
+          << "ibv_post_send failed.";
+
+      // after write keys/vals/lens (no imm), write the meta (with imm)
+      // Send(msg, msg_buf, remote_tuple);
+      RDMAWriteWithImm(msg_buf, meta_raddr, meta_rkey, idx, true, nullptr);
+    }
+  }
+
+  virtual void SendPullResponseFast(Message &msg, MessageBuffer *msg_buf,
+                                RemoteTuple remote_tuple, size_t lkey) {
+    PS_CHECK_EQ(msg_buf->mrs.size(), 0);
 
     auto raddr = msg.meta.addr;
     auto rkey = msg.meta.option;
     auto len = msg.meta.val_len;
-    CHECK_EQ((size_t)msg.meta.val_len, msg_buf->data[1].size());
+    PS_CHECK_EQ((size_t)msg.meta.val_len, msg_buf->data[1].size());
 
     struct ibv_sge sge;
     sge.addr = reinterpret_cast<uint64_t>(msg_buf->data[1].data());
@@ -421,24 +790,32 @@ class RDMATransport : public Transport {
     // this rdma-write will not trigger any signal both remotely and locally
     struct ibv_send_wr wr, *bad_wr = nullptr;
     memset(&wr, 0, sizeof(wr));
-    wr.wr_id = reinterpret_cast<uint64_t>(raddr);
-    wr.opcode = IBV_WR_RDMA_WRITE;
+    wr.wr_id = 0;
+    wr.imm_data = std::get<2>(remote_tuple) | (msg.meta.head << 16) | (1 << 24);
+    wr.opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
     wr.next = nullptr;
     wr.sg_list = &sge;
     wr.num_sge = 1;
     wr.wr.rdma.remote_addr = raddr;
     wr.wr.rdma.rkey = rkey;
+    wr.send_flags = 0;
 
-    CHECK_EQ(ibv_post_send(endpoint_->cm_id->qp, &wr, &bad_wr), 0)
+    PS_CHECK_EQ(ibv_post_send(endpoint_->cm_ids[0]->qp, &wr, &bad_wr), 0)
         << "ibv_post_send failed.";
-
-    // after write keys/vals/lens (no imm), write the meta (with imm)
-    Send(msg, msg_buf, remote_tuple);
   }
 
   virtual int RecvPushResponse(Message *msg, BufferContext *buffer_ctx,
                                int meta_len) {
-    CHECK_EQ(buffer_ctx->data_num, 0);
+    PS_CHECK_EQ(buffer_ctx->data_num, 0);
+    return 0;
+  }
+
+  virtual int RecvPushResponseFast(Message *msg, BufferContext *buffer_ctx,
+                                   MessageBuffer *msg_buf) {
+    PS_CHECK_EQ(buffer_ctx->data_num, 0);
+    RawMeta *raw = reinterpret_cast<RawMeta*>(msg_buf->inline_buf);
+    // restore timestamp from local buffer
+    msg->meta.timestamp = raw->timestamp;
     return 0;
   }
 
@@ -456,16 +833,44 @@ class RDMATransport : public Transport {
 
   virtual int RecvPushRequest(Message *msg, BufferContext *buffer_ctx,
                               int meta_len) {
-    CHECK(msg->meta.push && msg->meta.request);
-    CHECK_EQ(buffer_ctx->data_num, 3);
+    PS_CHECK(msg->meta.push && msg->meta.request);
+#ifdef STEPAF_USE_GDR
+    if (is_server_) {
+      PS_CHECK(buffer_ctx->data_num >= 2);
+      // Data is in a separate GPU buffer
+      char *cur_meta = buffer_ctx->meta_buffer;
+      void *cur_data = buffer_ctx->gpu_data_buffer;
+      PS_CHECK(cur_meta) << "Meta buffer is null in RecvPushRequest";
+      PS_CHECK(cur_data) << "GPU data buffer is null in RecvPushRequest";
+
+      // Meta is parsed from the original message, data from buffers
+      SArray<char> keys = CreateFunctionalSarray(&msg->meta.key, sizeof(Key));
+
+      uint32_t len = msg->meta.val_len;
+      SArray<char> vals;
+
+      vals.reset(reinterpret_cast<char *>(cur_data), len, [](void*){});
+
+      SArray<char> lens = CreateFunctionalSarray(&msg->meta.val_len, sizeof(int));
+
+      msg->data.push_back(keys);
+      msg->data.push_back(vals);
+      msg->data.push_back(lens);
+
+      return keys.size() + vals.size() + lens.size();
+    }
+#endif  // STEPAF_USE_GDR
+
+    // Original non-GDR or client-side logic
+    PS_CHECK_EQ(buffer_ctx->data_num, 3);
     char *cur = buffer_ctx->buffer + align_ceil((size_t)meta_len, pagesize_);
 
     SArray<char> keys = CreateFunctionalSarray(&msg->meta.key, sizeof(Key));
+    SArray<char> lens = CreateFunctionalSarray(&msg->meta.val_len, sizeof(int));
 
     uint32_t len = msg->meta.val_len;
     SArray<char> vals;
     vals.reset(cur, len, [](void *) {});  // no need to delete
-    SArray<char> lens = CreateFunctionalSarray(&msg->meta.val_len, sizeof(int));
 
     msg->data.push_back(keys);
     msg->data.push_back(vals);
@@ -477,19 +882,26 @@ class RDMATransport : public Transport {
   virtual int RecvPullResponse(Message *msg, BufferContext *buffer_ctx,
                                int meta_len) {
     SArray<char> keys = CreateFunctionalSarray(&msg->meta.key, sizeof(Key));
+    SArray<char> lens = CreateFunctionalSarray(&msg->meta.val_len, sizeof(int));
 
     SArray<char> vals;
     auto addr = msg->meta.addr;
     vals.reset(reinterpret_cast<char *>(addr), msg->meta.val_len,
                [](void *) {});
 
-    SArray<char> lens = CreateFunctionalSarray(&msg->meta.val_len, sizeof(int));
-
     msg->data.push_back(keys);
     msg->data.push_back(vals);
     msg->data.push_back(lens);
 
     return keys.size() + vals.size() + lens.size();
+  }
+
+  virtual int RecvPullResponseFast(Message *msg, BufferContext *buffer_ctx,
+                               int meta_len, MessageBuffer *msg_buf) {
+    RawMeta *raw = reinterpret_cast<RawMeta*>(msg_buf->inline_buf);
+    // restore timestamp from local buffer
+    msg->meta.timestamp = raw->timestamp;
+    return RecvPullResponse(msg, buffer_ctx, meta_len);
   }
 
   SArray<char> CreateFunctionalSarray(void *value, size_t size) {
@@ -500,14 +912,15 @@ class RDMATransport : public Transport {
     return sarr;
   }
 
+  bool is_server_;
+
  protected:
   size_t pagesize_ = 4096;
   Endpoint *endpoint_;
   MemoryAllocator *allocator_;
-  bool is_server_;
+  BackendMemoryAllocator *mem_allocator_;
 
   Postoffice *postoffice_;
-
 };  // class Transport
 
 class IPCTransport : public RDMATransport {
@@ -539,7 +952,7 @@ class IPCTransport : public RDMATransport {
     val = Environment::Get()->find("BYTEPS_IPC_ENABLE_ASYNC_COPY");
     enable_async_copy_ = val ? atoi(val) : 1;  // default enabled
     if (!enable_async_copy_)
-      LOG(INFO)
+      PS_LOG(INFO)
           << "Async copy has been disabled, this could affect the performance";
 
     val = Environment::Get()->find("BYTEPS_PCIE_SWITCH_SIZE");
@@ -561,7 +974,7 @@ class IPCTransport : public RDMATransport {
     val = Environment::Get()->find("BYTEPS_JOB_ID");
     std::string _job_id = val ? std::string(val) : "0";
     shm_prefix_ = shm_prefix_ + _job_id + "_";
-  };
+  }
 
   ~IPCTransport() {
     for (size_t i = 0; i < ipc_copy_thread_list_.size(); ++i) {
@@ -579,8 +992,8 @@ class IPCTransport : public RDMATransport {
 
   void SendPullResponse(Message &msg, MessageBuffer *msg_buf,
                         RemoteTuple remote_tuple, size_t lkey) {
-    auto addr = (void *)CHECK_NOTNULL(msg.data[1].data());
-    void *shm_addr = CHECK_NOTNULL(GetSharedMemory(shm_prefix_, msg.meta.key));
+    auto addr = (void *)PS_CHECK_NOTNULL(msg.data[1].data());
+    void *shm_addr = PS_CHECK_NOTNULL(GetSharedMemory(shm_prefix_, msg.meta.key));
 
     if (enable_async_copy_) {
       // async copy with a simple load-balancing strategy
@@ -634,8 +1047,8 @@ class IPCTransport : public RDMATransport {
       if (m.len == 0) continue;
 
       // TODO: use parallel copy
-      CHECK(m.dst);
-      CHECK(m.src);
+      PS_CHECK(m.dst);
+      PS_CHECK(m.src);
       memcpy(m.dst, m.src, m.len);
 
       auto raddr = std::get<0>(m.remote_tuple);
@@ -679,16 +1092,16 @@ class IPCTransport : public RDMATransport {
 
     shm_name += stream.str();
     int shm_fd = shm_open(shm_name.c_str(), O_RDWR, 0666);
-    CHECK_GE(shm_fd, 0) << "shm_open failed for " << shm_name << ", "
+    PS_CHECK_GE(shm_fd, 0) << "shm_open failed for " << shm_name << ", "
                         << strerror(errno);
 
     struct stat sb;
-    CHECK_EQ(0, fstat(shm_fd, &sb)) << strerror(errno);
+    PS_CHECK_EQ(0, fstat(shm_fd, &sb)) << strerror(errno);
     auto total_shm_size = sb.st_size;
 
     void *base_ptr =
         mmap(0, total_shm_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
-    CHECK_NE(base_ptr, (void *)-1) << strerror(errno);
+    PS_CHECK_NE(base_ptr, (void *)-1) << strerror(errno);
     key_shm_addr_[base_key] = base_ptr;
 
     PS_VLOG(1) << "open Shared Memory: " << shm_name << " offset=" << offset
@@ -712,7 +1125,7 @@ class IPCTransport : public RDMATransport {
   int encoding_scheme_version_ = 0;
 };  // class IPCTransport
 
-};  // namespace ps
+}  // namespace ps
 
 #endif  // DMLC_USE_RDMA
-#endif  // PS_RDMA_VAN_H_
+#endif  // PS_RDMA_TRANSPORT_H_

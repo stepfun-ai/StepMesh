@@ -1,10 +1,12 @@
 /**
  *  Copyright (c) 2015 by Contributors
+ *  Modifications Copyright (C) by StepAI Contributors. 2025.
  */
 #ifndef PS_INTERNAL_POSTOFFICE_H_
-#define PS_INTERNAL_POSTOFFICE_H_
+#define  PS_INTERNAL_POSTOFFICE_H_
 #include <algorithm>
 #include <mutex>
+#include <memory>
 #include <vector>
 
 #include "ps/internal/customer.h"
@@ -23,7 +25,7 @@ class Postoffice {
    * scheduler, server, worker.
    */
   static Postoffice* Get() {
-    CHECK(initialized_) << "Please call ps::StartPS() first";
+    PS_CHECK(initialized_) << "Please call ps::StartPS() first";
     if (po_scheduler_) return po_scheduler_;
     if (po_server_group_.size()) return po_server_group_.at(0);
     return po_worker_group_.at(0);
@@ -36,7 +38,7 @@ class Postoffice {
    * it should be less than DMLC_GROUP_SIZE.
    */
   static Postoffice* GetServer(int index = 0) {
-    CHECK(initialized_) << "Please call ps::StartPS() first";
+    PS_CHECK(initialized_) << "Please call ps::StartPS() first";
     if (po_scheduler_) return po_scheduler_;
     return po_server_group_.at(index);
   }
@@ -45,7 +47,7 @@ class Postoffice {
    * \brief return the Postoffice instance for scheduler.
    */
   static Postoffice* GetScheduler() {
-    CHECK(initialized_) << "Please call ps::StartPS() first";
+    PS_CHECK(initialized_) << "Please call ps::StartPS() first";
     return po_scheduler_;
   }
 
@@ -55,7 +57,7 @@ class Postoffice {
    * it should be less than DMLC_GROUP_SIZE.
    */
   static Postoffice* GetWorker(int index = 0) {
-    CHECK(initialized_) << "Please call ps::StartPS() first";
+    PS_CHECK(initialized_) << "Please call ps::StartPS() first";
     return po_worker_group_.at(index);
   }
 
@@ -109,7 +111,7 @@ class Postoffice {
    */
   const std::vector<int>& GetNodeIDs(int node_id) const {
     const auto it = node_ids_.find(node_id);
-    CHECK(it != node_ids_.cend()) << "node " << node_id << " doesn't exist";
+    PS_CHECK(it != node_ids_.cend()) << "node " << node_id << " doesn't exist";
     return it->second;
   }
   /**
@@ -307,10 +309,9 @@ class Postoffice {
    */
   std::shared_ptr<Environment> env_ref_;
   time_t start_time_;
+  bool started_;
   DISALLOW_COPY_AND_ASSIGN(Postoffice);
 };
 
-/** \brief verbose log */
-#define PS_VLOG(x) LOG_IF(INFO, x <= Postoffice::Get()->verbose())
 }  // namespace ps
 #endif  // PS_INTERNAL_POSTOFFICE_H_

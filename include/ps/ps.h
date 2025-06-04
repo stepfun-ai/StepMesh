@@ -1,16 +1,28 @@
 /*!
  *  Copyright (c) 2015 by Contributors
+ *  Modifications Copyright (C) by StepAI Contributors. 2025.
  * @file   ps.h
  * \brief  The parameter server interface
  */
 #ifndef PS_PS_H_
 #define PS_PS_H_
+
+#include <string>
+#include <vector>
+
 /** \brief basic setups in ps */
 #include "ps/base.h"
 /** \brief communicating with a pair of (int, string). */
 #include "ps/simple_app.h"
 /** \brief communcating with a list of key-value paris. */
 #include "ps/kv_app.h"
+/** \brief tensor-based communication with a list of attention and ffn nodes. */
+#include "ps/af_tensor_app.h"
+
+#include "ps/internal/backend.h"
+#include "ps/internal/gpu_backend.h"
+#include "ps/internal/cpu_backend.h"
+
 namespace ps {
 /** \brief Returns the number of worker nodes */
 inline int NumWorkers() { return Postoffice::Get()->num_workers(); }
@@ -37,7 +49,7 @@ inline int MyRank() {
  * \param argv0 the program name, used for logging
  */
 
-inline Node::Role GetRole(const std::string role_str) {
+inline Node::Role GetRole(const std::string& role_str) {
   Node::Role role = Node::SCHEDULER;
   if (role_str == "worker") {
     role = Node::WORKER;
@@ -48,7 +60,7 @@ inline Node::Role GetRole(const std::string role_str) {
   } else if (role_str == "joint") {
     role = Node::JOINT;
   } else {
-    CHECK(false) << "Unexpected role: " << role_str;
+    PS_CHECK(false) << "Unexpected role: " << role_str;
   }
   return role;
 }
@@ -121,15 +133,20 @@ inline void _StartPSGroup(int customer_id, std::vector<int> worker_ranks,
  */
 inline void StartPS(int customer_id, Node::Role role, int rank, bool do_barrier,
                     const char *argv0 = nullptr) {
-  auto val = Environment::Get()->find("DMLC_GROUP_SIZE");
-  int group_size = val ? atoi(val) : 1;
+  Backend::Register("CPU", new CpuBackend());
+  Backend::Register("GPU", new GpuBackend());
 
+  int group_size = 1;
+  Environment::Get()->find("DMLC_GROUP_SIZE", &group_size, group_size);
   Postoffice::Init(role);
   if (group_size == 1 || role == Node::SCHEDULER) {
-    int instance_idx = 0;
-    _StartPS(customer_id, role, rank, do_barrier, argv0, instance_idx);
+    _StartPS(customer_id, role, rank, do_barrier, argv0, 0);
+  } else if (group_size > 1 && rank >= 0) {
+    _StartPS(customer_id, role, rank,
+             do_barrier, argv0, rank % group_size);
   } else {
-    CHECK(rank >= 0 && group_size > 0) << group_size;
+    PS_CHECK(rank >= 0 && group_size > 0)
+        << " group_size=" << group_size << " rank=" << rank;
     std::vector<int> worker_ranks;
     std::vector<int> server_ranks;
     // start PS workers and servers as a group
@@ -201,11 +218,10 @@ inline void _FinalizeGroup(int customer_id, Node::Role role, int group_size,
  */
 inline void Finalize(int customer_id, Node::Role role,
                      const bool do_barrier = true) {
-  auto val = Environment::Get()->find("DMLC_GROUP_SIZE");
-  int group_size = val ? atoi(val) : 1;
+  int group_size = 1;
+  Environment::Get()->find("DMLC_GROUP_SIZE", &group_size, 1);
   if (group_size == 1 || role == Node::SCHEDULER) {
-    int instance_idx = 0;
-    _Finalize(customer_id, role, do_barrier, instance_idx);
+    _Finalize(customer_id, role, do_barrier, 0);
   } else {
     _FinalizeGroup(customer_id, role, group_size, do_barrier);
   }
@@ -228,6 +244,24 @@ inline void Finalize(int customer_id, Node::Role role,
  */
 inline void RegisterExitCallback(const std::function<void()> &cb) {
   Postoffice::Get()->RegisterExitCallback(cb);
+}
+
+inline int GetNodeRank() {
+  int node_rank = -1;
+  Environment::Get()->find("DMLC_NODE_RANK", &node_rank, node_rank);
+  return node_rank;
+}
+
+inline int GetGroupSize() {
+  int group_size = 1;
+  Environment::Get()->find("DMLC_GROUP_SIZE", &group_size, group_size);
+  return group_size;
+}
+
+inline int GetGpuId() {
+  int gpu = 0;
+  Environment::Get()->find("STEPAF_GPU", &gpu, gpu);
+  return gpu;
 }
 
 }  // namespace ps

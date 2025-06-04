@@ -73,7 +73,7 @@ class MultiVan : public Van {
 
     auto val = Environment::Get()->find("DMLC_ROLE");
     std::string role(val);
-    LOG(INFO) << "This is a " << role;
+    PS_LOG(INFO) << "This is a " << role;
     start_mu_.unlock();
 
     // only 1 port needed for the scheduler
@@ -119,7 +119,7 @@ class MultiVan : public Van {
 
   int Bind(Node& node, int max_retry) override {
     std::lock_guard<std::mutex> lk(endpoints_mu_);
-    CHECK_EQ(node.num_ports, num_ports_);
+    PS_CHECK_EQ(node.num_ports, num_ports_);
     my_nodes_.resize(num_ports_);
     for (int i = 0; i < num_ports_; ++i) {
       int port = node.ports[i];
@@ -144,9 +144,9 @@ class MultiVan : public Van {
   }
 
   void Connect(const Node& node) override {
-    CHECK_NE(node.id, node.kEmpty);
-    CHECK_NE(node.port, node.kEmpty);
-    CHECK(node.hostname.size());
+    PS_CHECK_NE(node.id, node.kEmpty);
+    PS_CHECK_NE(node.port, node.kEmpty);
+    PS_CHECK(node.hostname.size());
 
     // worker doesn't need to connect to the other workers. same for server
     if ((node.role == my_node_.role) && (node.id != my_node_.id)) {
@@ -172,19 +172,19 @@ class MultiVan : public Van {
 
   int SendMsg(Message& msg) override {
     int remote_id = msg.meta.recver;
-    CHECK_NE(remote_id, Node::kEmpty);
+    PS_CHECK_NE(remote_id, Node::kEmpty);
     // XXX assume device IDs are: [0, 1 ... num_ports - 1]
     bool pushpull = IsValidPushpull(msg);
     int src_idx = 0;
     int dst_idx = 0;
     if (pushpull && msg.data.size() == 3) {
       auto& data = msg.data[1];
-      CHECK(data.src_device_type_ == CPU);
-      CHECK(data.dst_device_type_ == CPU);
+      PS_CHECK(data.src_device_type_ == CPU);
+      PS_CHECK(data.dst_device_type_ == CPU);
       src_idx = data.src_device_id_;
       dst_idx = data.dst_device_id_;
-      CHECK_EQ(my_nodes_[src_idx].dev_types[0], data.src_device_type_);
-      CHECK_EQ(my_nodes_[src_idx].dev_ids[0], data.src_device_id_);
+      PS_CHECK_EQ(my_nodes_[src_idx].dev_types[0], data.src_device_type_);
+      PS_CHECK_EQ(my_nodes_[src_idx].dev_ids[0], data.src_device_id_);
       // TODO: check msg.meta.src_dev_ids, types, etc.
     }
     Message van_msg = msg;
@@ -197,7 +197,7 @@ class MultiVan : public Van {
 
   void RegisterRecvBuffer(Message& msg) {
     Message van_msg = msg;
-    CHECK_EQ(msg.data.size(), 3);
+    PS_CHECK_EQ(msg.data.size(), 3);
     int src_idx = msg.data[1].src_device_id_;
     int dst_idx = msg.data[1].dst_device_id_;
     van_msg.meta.sender = EncodeManagedID(msg.meta.sender, src_idx);
@@ -238,7 +238,7 @@ class MultiVan : public Van {
     if (id == Node::kEmpty) {
       return Node::kEmpty;
     }
-    CHECK(id < MAX_NUM_IDS);
+    PS_CHECK(id < MAX_NUM_IDS);
     return ID_OFFSET + id + index * MAX_NUM_IDS;
   }
 

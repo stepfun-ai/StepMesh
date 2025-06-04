@@ -48,8 +48,8 @@ template<typename T, class Fn>
 void ParallelSort(SArray<T>* arr,
                   int num_threads = 2,
                   const Fn& cmp = std::less<T>()) {
-  CHECK_GT(num_threads, 0);
-  CHECK(cmp);
+  PS_CHECK_GT(num_threads, 0);
+  PS_CHECK(cmp);
   size_t grainsize = std::max(arr->size() / num_threads + 5, (size_t)1024*16);
   ParallelSort(arr->data(), arr->size(), grainsize, cmp);
 }
