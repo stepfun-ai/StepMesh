@@ -10,7 +10,7 @@ trap cleanup EXIT
 
 export BIN=${BIN:-test_remote_moe}
 # common setup
-export DMLC_INTERFACE=brainpf_bond0
+export DMLC_INTERFACE=${RNIC:-brainpf_bond0}
 export SCHEDULER_IP=$(ip -o -4 addr | grep ${DMLC_INTERFACE} | awk '{print $4}' | cut -d'/' -f1)
 export DMLC_NUM_WORKER=${NUM_WORKER:-1}
 export DMLC_NUM_SERVER=1
@@ -24,26 +24,26 @@ export DMLC_SPLIT_QP_LAG=1
 
 # export PS_VERBOSE=2
 
-r=${r:-server}
-if [ $r == "server" ]; then
-  echo "Scheduler ip $SCHEDULER_IP "
+ROLE=${ROLE:-server}
+if [ $ROLE == "server" ]; then
+  echo "Run server and scheduler, scheduler ip $SCHEDULER_IP "
   export DMLC_NODE_HOST=${SCHEDULER_IP}
   DMLC_ROLE=scheduler python3 $THIS_DIR/${BIN}.py &
 
   export DMLC_INTERFACE=auto
   for P in {0..7}; do
-    DMLC_ROLE=server STEPAF_GPU=${P} numactl --membind=netdev:brainpf${P}_0 --cpubind=netdev:brainpf${P}_0 python3 $THIS_DIR/${BIN}.py $@ &
+    DMLC_ROLE=server STEPAF_GPU=${P} python3 $THIS_DIR/${BIN}.py $@ &
   done
-elif [ $r == "worker" ]; then
-  echo "Using scheduler ip: $1"
+elif [ $ROLE == "worker" ]; then
+  echo "Run worker with scheduler ip: $1"
   export DMLC_PS_ROOT_URI=$1
   export DMLC_INTERFACE=auto
   export DMLC_NODE_HOST=${SCHEDULER_IP}
   for P in {0..7}; do
-    DMLC_ROLE=worker STEPAF_GPU=${P} numactl --membind=netdev:brainpf${P}_0 --cpubind=netdev:brainpf${P}_0  python3 $THIS_DIR/${BIN}.py "${@:2}" &
+    DMLC_ROLE=worker STEPAF_GPU=${P} python3 $THIS_DIR/${BIN}.py "${@:2}" &
   done
-elif [ $r == "local" ]; then
-  echo "local test scheduler ip $SCHEDULER_IP "
+elif [ $ROLE == "joint" ]; then
+  echo "Run scheduler, server, and worker jointly"
   export DMLC_NODE_HOST=${SCHEDULER_IP}
   export DMLC_PS_ROOT_URI=$SCHEDULER_IP
   DMLC_ROLE=scheduler python3 $THIS_DIR/${BIN}.py &

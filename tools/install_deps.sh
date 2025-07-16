@@ -1,4 +1,4 @@
-sudo apt install -y build-essential libtool autoconf automake libnuma-dev unzip pkg-config
+sudo apt install -y build-essential libtool autoconf automake libnuma-dev unzip pkg-config librdmacm-dev rdma-core
 
 THIS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )"/../ &> /dev/null && pwd )"
 

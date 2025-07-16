@@ -85,6 +85,7 @@ def moe_computation(input_tensor, w1, w2, expert_token_cnt):
     out = torch.ops.OptimusMoe.gemm_grouped(out, w2, expert_token_cnt)
     return out
 
+
 if is_worker:
     # prepare initial buffers (each key should have a dedicated buffer)
     expert_token_cnt_buffer = torch.tensor([num_token for _ in range(bsz)], dtype=torch.int32, device=f'cuda:{gpu}')
@@ -143,7 +144,7 @@ elif is_server:
                            [gen_push_key(i, 0, 0) for i in range(bsz)])
     # barrier for registration ops
     f.barrier(True, True)
-
+    print("barrier done")
     if args.profile and rank == 0:
         profiler = torch.profiler.profile(
             activities=[ProfilerActivity.CUDA, ProfilerActivity.CPU],

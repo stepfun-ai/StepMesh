@@ -103,7 +103,7 @@ build/%.o: src/%.cc ${ZMQ}
 include tests/test.mk
 test: $(TEST)
 
-tensor:
+af:
 	@mkdir -p cmake_build
 	@cd cmake_build; cmake .. -DCMAKE_CUDA_COMPILER=$(CMAKE_CUDA_COMPILER) -DPython_EXECUTABLE=/usr/bin/python3 -DCUDA_TOOLKIT_ROOT_DIR=$(CUDA_TOOLKIT_ROOT_DIR); make -j
 	@mkdir -p build

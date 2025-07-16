@@ -112,23 +112,18 @@ void init() {
   ps::Environment::Get()->find("STEPAF_GPU", &gpu_, gpu_);
   ps::Environment::Get()->find("DMLC_GROUP_SIZE", &group_size_, group_size_);
   ps::Environment::Get()->find("DMLC_NODE_RANK", &node_rank_, node_rank_);
-  // 默认的Instance ID与GPU相同
   ps::Environment::Get()->find("DMLC_INSTANCE_ID", &instance_id_, gpu_);
 
   CUDA_CALL(cudaSetDevice(gpu_));
-  std::cout << "Rank ID " << group_size_ * node_rank_ + gpu_ 
-    << " Instance_ID " << instance_id_ <<  std::endl;
   ps::StartPS(0, role_,  group_size_ * node_rank_ + gpu_, true);
   if (role_ == Node::WORKER) {
     fworker_ = new AFTensorWorker(instance_id_);
-    barrier(true,true);
+    barrier(true, true);
   } else if (role_ == Node::SERVER) {
     fserver_ = new AFTensorServer(instance_id_);
-    // 下面这个能跑通
-    // fserver_ = new AFTensorServer(0, -1, false, instance_id_);
     fserver_->SetRequestHandle(SumHandler);
-    RegisterExitCallback([fserver_]() { delete fserver_; });
-    barrier(true,true);
+    RegisterExitCallback([]() { delete fserver_; });
+    barrier(true, true);
   }
 }
 

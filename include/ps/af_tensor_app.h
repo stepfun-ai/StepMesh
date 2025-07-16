@@ -357,7 +357,7 @@ class AFTensorServer {
    */
   explicit AFTensorServer(int gpu)
       : kv_(0, false, gpu), gpu_(gpu), response_stop_(false) {
-    PS_LOG(WARNING) << "AFTensorServer " << gpu;
+    PS_LOG(INFO) << "AFTensorServer runs on gpu " << gpu;
     Backend::Get()->SetDevice(gpu_);
     for (int i = 0; i < 64; i ++) {
       events_.push_back(new TensorEvent());
