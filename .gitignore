@@ -21,3 +21,6 @@ stress_test_benchmark
 test
 .idea
 cmake_build
+
+*.so
+*egg-info
