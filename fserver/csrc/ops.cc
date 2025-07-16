@@ -109,7 +109,7 @@ void init() {
   std::string role_str = GetEnv("DMLC_ROLE", "server");
   role_ = GetRole(role_str);
 
-  ps::Environment::Get()->find("STEPPS_GPU", &gpu_, gpu_);
+  ps::Environment::Get()->find("STEPAF_GPU", &gpu_, gpu_);
   ps::Environment::Get()->find("DMLC_GROUP_SIZE", &group_size_, group_size_);
   ps::Environment::Get()->find("DMLC_NODE_RANK", &node_rank_, node_rank_);
   // 默认的Instance ID与GPU相同

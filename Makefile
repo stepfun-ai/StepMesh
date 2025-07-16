@@ -107,10 +107,5 @@ tensor:
 	@mkdir -p cmake_build
 	@cd cmake_build; cmake .. -DCMAKE_CUDA_COMPILER=$(CMAKE_CUDA_COMPILER) -DPython_EXECUTABLE=/usr/bin/python3 -DCUDA_TOOLKIT_ROOT_DIR=$(CUDA_TOOLKIT_ROOT_DIR); make -j
 	@mkdir -p build
-	@cp -f cmake_build/libaf.a build/libps.a
+	@cp -f cmake_build/libaf.a build/libaf.a
 
-tensor_fast:
-	@mkdir -p cmake_build
-	@cd cmake_build; cmake .. -DCMAKE_CUDA_COMPILER=$(CMAKE_CUDA_COMPILER) -DPython_EXECUTABLE=/usr/bin/python3 -DCUDA_TOOLKIT_ROOT_DIR=$(CUDA_TOOLKIT_ROOT_DIR); make -j
-	@mkdir -p build
-	@cp -f cmake_build/libaf.a build/libps.a

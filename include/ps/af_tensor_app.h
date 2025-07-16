@@ -51,7 +51,7 @@ class AFTensorWorker {
    * \param instance_idx the instance id within a group
    */
   explicit AFTensorWorker(int instance_idx = 0)
-      : kv_(0, 0, instance_idx) {
+      : kv_(0, 0, instance_idx), instance_id_(instance_idx) {
     gpu_ = 0;
     Environment::Get()->find("STEPAF_GPU", &gpu_, gpu_);
     Backend::Get()->SetDevice(gpu_);
@@ -614,7 +614,6 @@ class AFTensorServer {
   AFServerRequestHandle request_handle_;
   /** \brief gpu device index */
   int gpu_;
-  int instance_id_;
   /** \brief tensor event mutex */
   std::mutex events_mu_;
   /** \brief tensor event vector */

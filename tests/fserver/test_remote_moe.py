@@ -29,7 +29,7 @@ args = parser.parse_args()
 
 is_worker = os.environ.get('DMLC_ROLE') == 'worker'
 is_server = os.environ.get('DMLC_ROLE') == 'server'
-gpu = os.environ.get('STEPPS_GPU', '0')
+gpu = os.environ.get('STEPAF_GPU', '0')
 local_rank_num = int(os.environ.get('DMLC_GROUP_SIZE', '1'))
 node_rank = int(os.environ.get('DMLC_NODE_RANK', '0'))
 rank = node_rank * local_rank_num + int(gpu)

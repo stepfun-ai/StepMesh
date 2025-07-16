@@ -7,6 +7,7 @@ import pathlib
 import os
 from pathlib import Path
 
+
 def _get_cuda_bare_metal_version(cuda_dir):
     assert cuda_dir is not None, "Please ensure cuda is installed"
     raw_output = subprocess.check_output([cuda_dir + "/bin/nvcc", "-V"],
@@ -18,6 +19,7 @@ def _get_cuda_bare_metal_version(cuda_dir):
     bare_metal_minor = release[1][0]
 
     return bare_metal_major, bare_metal_minor
+
 
 __SRC_PATH__ = 'fserver/csrc/'
 __PS_PATH__ = f'{Path.cwd()}'
@@ -64,7 +66,7 @@ if __name__ == "__main__":
                                 '--use_fast_math'] + cc_flag,
                 },
                 extra_link_args=['-lrdmacm', '-libverbs'],
-                extra_objects=[f"{__PS_PATH__}/build/libps.a", f"{__PS_PATH__}/deps/lib/libzmq.a"],
+                extra_objects=[f"{__PS_PATH__}/build/libaf.a", f"{__PS_PATH__}/deps/lib/libzmq.a"],
             )
         ],
         cmdclass={

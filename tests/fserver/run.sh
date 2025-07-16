@@ -22,7 +22,7 @@ export DMLC_INTERFACE=auto
 export DMLC_NODE_HOST=${SCHEDULER_IP}
 export DMLC_INTERFACE=auto
 export DMLC_SPLIT_QP_LAG=1
-export STEPPS_GPU=0
+export STEPAF_GPU=0
 # export PS_VERBOSE=2
 
 # if [ $r == "server" ]; then

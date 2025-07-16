@@ -42,7 +42,7 @@ if [ $r == "server" ]; then
   fi
   export DMLC_INTERFACE=auto
   for P in {0..7}; do
-    DMLC_ROLE=server STEPPS_GPU=${P} numactl --membind=netdev:brainpf${P}_0 --cpubind=netdev:brainpf${P}_0  python3 $THIS_DIR/${BIN}.py "${@:2}" &
+    DMLC_ROLE=server STEPAF_GPU=${P} numactl --membind=netdev:brainpf${P}_0 --cpubind=netdev:brainpf${P}_0  python3 $THIS_DIR/${BIN}.py "${@:2}" &
   done
 elif [ $r == "worker" ]; then
   echo "Using scheduler ip: $1"
@@ -50,7 +50,7 @@ elif [ $r == "worker" ]; then
   export DMLC_INTERFACE=auto
   export DMLC_NODE_HOST=${SCHEDULER_IP}
   for P in {0..7}; do
-    DMLC_ROLE=worker STEPPS_GPU=${P} numactl --membind=netdev:brainpf${P}_0 --cpubind=netdev:brainpf${P}_0  python3 $THIS_DIR/${BIN}.py "${@:2}" &
+    DMLC_ROLE=worker STEPAF_GPU=${P} numactl --membind=netdev:brainpf${P}_0 --cpubind=netdev:brainpf${P}_0  python3 $THIS_DIR/${BIN}.py "${@:2}" &
   done
 elif [ $r == "local" ]; then
   export DMLC_GROUP_SIZE=1
@@ -70,17 +70,17 @@ elif [ $r == "local" ]; then
 
   if [ $1 == "se0" ]; then
   
-  DMLC_ROLE=server STEPPS_GPU=0 python3 $THIS_DIR/${BIN}.py &
+  DMLC_ROLE=server STEPAF_GPU=0 python3 $THIS_DIR/${BIN}.py &
   fi
 
   if [ $1 == "se1" ]; then
   export DMLC_INSTANCE_ID=0
  
-  DMLC_ROLE=server STEPPS_GPU=1  python3 $THIS_DIR/${BIN}.py &
+  DMLC_ROLE=server STEPAF_GPU=1  python3 $THIS_DIR/${BIN}.py &
   fi
 
   if [ $1 == "w" ]; then
-   DMLC_ROLE=worker STEPPS_GPU=0 python3 $THIS_DIR/${BIN}.py &
+   DMLC_ROLE=worker STEPAF_GPU=0 python3 $THIS_DIR/${BIN}.py &
   fi
 fi
 
