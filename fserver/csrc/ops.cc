@@ -132,8 +132,6 @@ void register_recv_buffer(torch::Tensor& tensor, std::vector<int> worker_ranks, 
 }
 
 void stop() {
-  // LOG(INFO) << (role_ == Node::WORKER ? "worker" : (role_ == Node::SCHEDULER ? "scheduler" : "server"))
-            // << " stopping...";
   if (role_ == Node::WORKER) {
     ps::Postoffice::GetWorker(gpu_)->Barrier(0,
         ps::kWorkerGroup + ps::kServerGroup + ps::kScheduler);

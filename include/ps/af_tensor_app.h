@@ -40,6 +40,15 @@ struct KeyTensor {
 
 typedef std::vector<KeyTensor> KeyTensorBatch;
 
+/** \brief AF request */
+struct AFTensorRequest {
+  KeyTensorBatch push;
+  KeyTensorBatch pull;
+  std::vector<int> push_timestamps;
+  std::vector<int> pull_timestamps;
+  TensorEvent* event;
+};
+
 /**
  * \brief Attention-FFN Disaggregation Worker
  */
@@ -51,16 +60,27 @@ class AFTensorWorker {
    * \param instance_idx the instance id within a group
    */
   explicit AFTensorWorker(int instance_idx = 0)
-      : kv_(0, 0, instance_idx), instance_id_(instance_idx) {
+      : kv_(0, 0, instance_idx), instance_id_(instance_idx),
+        pushpull_stop_(false) {
     gpu_ = 0;
     Environment::Get()->find("STEPAF_GPU", &gpu_, gpu_);
     Backend::Get()->SetDevice(gpu_);
     for (int i = 0; i < 16; i ++) {
       events_.push_back(new TensorEvent());
     }
+
+    pushpull_thread_ = std::thread([this] {
+      this->PushPullWorker();
+    });
   }
 
-  virtual ~AFTensorWorker() = default;
+  virtual ~AFTensorWorker() {
+    pushpull_stop_.store(true);
+    pushpull_queue_.Push(AFTensorRequest());
+    if (pushpull_thread_.joinable()) {
+      pushpull_thread_.join();
+    }
+  };
 
   /**
    * Pushes a tensor to the FFN server.
@@ -102,41 +122,40 @@ class AFTensorWorker {
     auto server_ranges = Postoffice::GetWorker(instance_id_)->GetServerKeyRanges();
     int server_count = server_ranges.size();
     PS_CHECK_GT(server_count, 0) << "zero servers and cannot pushpull";
-    int pull_batch_size = int(pull_tensors.size() / server_count);
 
     std::unique_lock<std::mutex> lock(mu_);
-
+    auto req = AFTensorRequest();
     std::vector<int> timestamps;
     bool first = true;
     int start_ts = 0;
     for (size_t i = 0; i < push_tensors.size(); i++) {
-      SArray<Key> key(1);
-      *key.data() = push_tensors[i].key;
-
+      int ts = kv_.AllocTimestamp();
       if (i == 0) {
         first = false;
-        start_ts = ZPush_(key, push_tensors[0].val, AF_FLAG_BATCH_START);
-      } else if (pull_tensors.empty() && i == push_tensors.size() - 1) {
-        timestamps.emplace_back(
-            ZPush_(key, push_tensors[i].val, AF_FLAG_BATCH_END));
+        start_ts = ts;
       } else {
-        timestamps.emplace_back(
-            ZPush_(key, push_tensors[i].val, AF_FLAG_BATCH_MIDDLE));
+        timestamps.push_back(ts);
       }
+      req.push_timestamps.push_back(ts);
     }
 
+    int pull_batch_size = static_cast<int>(pull_tensors.size() / server_count);
     for (int i = 0; i < pull_batch_size; i++) {
-      SArray<Key> key(1);
+      int ts = kv_.AllocTimestamp();
       if (first && i == 0) {
-        start_ts = ZPull_(key, pull_tensors, i, AF_FLAG_BATCH_START);
-      } else if (i == pull_batch_size - 1) {
-        timestamps.emplace_back(
-            ZPull_(key, pull_tensors, i , AF_FLAG_BATCH_END));
+        start_ts = ts;
       } else {
-        timestamps.emplace_back(
-            ZPull_(key, pull_tensors, i , AF_FLAG_BATCH_MIDDLE));
+        timestamps.push_back(ts);
       }
+      req.pull_timestamps.push_back(ts);
     }
+
+    req.push = std::move(push_tensors);
+    req.pull = std::move(pull_tensors);
+    req.event = GetEvent();
+    req.event->Record();
+
+    pushpull_queue_.Push(std::move(req));
 
     std::unique_lock<std::mutex> timestamp_lock(timestamp_mu_);
     batch_timestamps_[start_ts] = std::move(timestamps);
@@ -200,10 +219,32 @@ class AFTensorWorker {
     return ev;
   }
 
-  int ZPush_(const SArray<Key>& keys,
+  void PushPullWorker() {
+    Backend::Get()->SetDevice(gpu_);
+    PS_LOG(WARNING) << "Start PushPullWorker " << gpu_;
+    while (!pushpull_stop_.load()) {
+      AFTensorRequest req;
+      pushpull_queue_.WaitAndPop(&req);
+
+      if (pushpull_stop_.load()) {
+        break;
+      }
+
+      req.event->Sync();
+      req.event->Release();
+      req.event = nullptr;
+      ZBatchPushPull_(req.push,
+                      req.push_timestamps,
+                      req.pull,
+                      req.pull_timestamps);
+    }
+    PS_LOG(INFO) << "Stop PushPullWorker" << gpu_;
+  }
+
+  void ZPush_(int ts,
+             const SArray<Key>& keys,
              const at::Tensor& tensor,
-             int cmd = 0,
-             int dst_rank = 0) {
+             int cmd = 0) {
     SArray<char> val;
     val.reset(
         reinterpret_cast<char*>(tensor.data_ptr()),
@@ -214,7 +255,7 @@ class AFTensorWorker {
     msg.meta.request = true;
     msg.meta.head = cmd;
     msg.meta.push = true;
-    msg.meta.timestamp = kv_.AllocTimestamp();
+    msg.meta.timestamp = ts;
 
     msg.meta.addr = reinterpret_cast<uint64_t>(tensor.data_ptr());
     msg.meta.val_len = tensor.numel() * tensor.itemsize();
@@ -229,8 +270,8 @@ class AFTensorWorker {
     msg.AddData(keys);
     msg.AddData(val);
 #ifdef DMLC_USE_CUDA
-    msg.meta.tensor_ev = GetEvent();
-    msg.meta.tensor_ev->Record();
+    msg.meta.tensor_ev = nullptr;
+    // msg.meta.tensor_ev->Record();
 #endif
     auto server_ranges = Postoffice::GetWorker(
                              instance_id_)->GetServerKeyRanges();
@@ -239,18 +280,15 @@ class AFTensorWorker {
     for(int i = 0 ; i < server_count; i++){
       kv_.SendMsg(msg, i);
     }
-    return msg.meta.timestamp;
   }
 
-  int ZPull_(const SArray<Key>& keys, KeyTensorBatch& pull_tensors, int index,
-             int cmd = 0, int dst_rank = 0) {
-
-    auto ts = kv_.AllocTimestamp();
+  void ZPull_(int ts, const SArray<Key>& keys, KeyTensorBatch& pull_tensors, int index,
+             int cmd = 0) {
 
     auto server_ranges = Postoffice::GetWorker(
                              instance_id_)->GetServerKeyRanges();
     int server_count = server_ranges.size();
-    int pull_batch_size = int(pull_tensors.size() / server_count);
+    int pull_batch_size = static_cast<int>(pull_tensors.size() / server_count);
     for (int i = 0; i < server_count; i++) {
       Message msg;
       msg.meta.timestamp = ts;
@@ -288,7 +326,52 @@ class AFTensorWorker {
                         this->kv_.EraseRecvKvs(ts);
                       });
     }
-    return ts;
+  }
+
+  void ZBatchPushPull_(KeyTensorBatch& push_tensors,
+                      std::vector<int>& push_timestamps,
+                      KeyTensorBatch& pull_tensors,
+                      std::vector<int>& pull_timestamps) {
+    Backend::Get()->SetDevice(gpu_);
+    auto server_ranges = Postoffice::GetWorker(instance_id_)->GetServerKeyRanges();
+    int server_count = server_ranges.size();
+    PS_CHECK_GT(server_count, 0) << "zero servers and cannot pushpull";
+
+    bool first = true;
+    for (size_t i = 0; i < push_tensors.size(); i++) {
+      SArray<Key> key(1);
+      *key.data() = push_tensors[i].key;
+
+      if (i == 0) {
+        ZPush_(push_timestamps[i],
+               key,
+               push_tensors[0].val,
+               AF_FLAG_BATCH_START);
+        first = false;
+      } else if (pull_tensors.empty() && i == push_tensors.size() - 1) {
+        ZPush_(push_timestamps[i],
+               key,
+               push_tensors[i].val,
+               AF_FLAG_BATCH_END);
+      } else {
+        ZPush_(push_timestamps[i],
+               key,
+               push_tensors[i].val,
+               AF_FLAG_BATCH_MIDDLE);
+      }
+    }
+
+    int pull_batch_size = static_cast<int>(pull_tensors.size() / server_count);
+    for (int i = 0; i < pull_batch_size; i++) {
+      SArray<Key> key(1);
+      if (first && i == 0) {
+        ZPull_(pull_timestamps[i], key, pull_tensors, i, AF_FLAG_BATCH_START);
+      } else if (i == pull_batch_size - 1) {
+        ZPull_(pull_timestamps[i], key, pull_tensors, i , AF_FLAG_BATCH_END);
+      } else {
+        ZPull_(pull_timestamps[i], key, pull_tensors, i , AF_FLAG_BATCH_MIDDLE);
+      }
+    }
   }
 
   KVWorker<char> kv_;
@@ -300,6 +383,12 @@ class AFTensorWorker {
   std::vector<TensorEvent*> events_;
   int gpu_;
   int instance_id_;
+  /** \brief queue for transmitting data from user thread to response thread */
+  ThreadsafeQueue<AFTensorRequest> pushpull_queue_;
+  /** \brief response thread */
+  std::thread pushpull_thread_;
+  /** \brief response stop signal */
+  std::atomic_bool pushpull_stop_;
 };
 
 /** \brief meta information about a kv request */
@@ -419,7 +508,7 @@ class AFTensorServer {
             response_count++;
             AFTensorResponse rsp = {};
             SArray<Key> key(1);
-            *key.data() = res_kv.key ;
+            *key.data() = res_kv.key;
             rsp.kv_pair.keys = key;
 
             rsp.kv_pair.vals.reset(

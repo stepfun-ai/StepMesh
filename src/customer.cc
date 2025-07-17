@@ -76,7 +76,7 @@ int Customer::NumResponse(int timestamp) {
 
 void Customer::AddResponse(int timestamp, int num) {
   // std::unique_lock<std::mutex> lk(tracker_mu_);
-  tracker_[timestamp]->response_count.fetch_add(num,std::memory_order_release);
+  tracker_[timestamp]->response_count.fetch_add(num, std::memory_order_release);
 }
 
 void Customer::Receiving() {
