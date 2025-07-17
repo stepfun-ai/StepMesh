@@ -461,7 +461,6 @@ void Van::ProcessDataMsg(Message *msg) {
   PS_CHECK(obj) << "timeout (5 sec) to wait App " << app_id << " customer "
              << customer_id << " ready at " << my_node_.role;
   // obj->Accept(*msg);
-  PS_LOG(TRACE) << "DirectProcess";
   obj->DirectProcess(*msg);
 
 #ifdef USE_PROFILING

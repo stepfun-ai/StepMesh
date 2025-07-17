@@ -46,7 +46,8 @@ struct AFTensorRequest {
   KeyTensorBatch pull;
   std::vector<int> push_timestamps;
   std::vector<int> pull_timestamps;
-  TensorEvent* event;
+  TensorEvent* event = nullptr;
+  int64_t start = 0;
 };
 
 /**
@@ -125,6 +126,7 @@ class AFTensorWorker {
 
     std::unique_lock<std::mutex> lock(mu_);
     auto req = AFTensorRequest();
+    req.start = GetNanosecond();
     std::vector<int> timestamps;
     bool first = true;
     int start_ts = 0;
@@ -269,15 +271,12 @@ class AFTensorWorker {
     msg.data.clear();
     msg.AddData(keys);
     msg.AddData(val);
-#ifdef DMLC_USE_CUDA
     msg.meta.tensor_ev = nullptr;
-    // msg.meta.tensor_ev->Record();
-#endif
     auto server_ranges = Postoffice::GetWorker(
                              instance_id_)->GetServerKeyRanges();
     int server_count = server_ranges.size();
     // broadcast
-    for(int i = 0 ; i < server_count; i++){
+    for (int i = 0; i < server_count; i++) {
       kv_.SendMsg(msg, i);
     }
   }
@@ -478,7 +477,8 @@ class AFTensorServer {
    * @param stream the gpu stream used for event synchronize
    */
   void Response(const AFTensorMeta& meta,
-                KeyTensorBatch tensors = {}) {
+                KeyTensorBatch tensors = {},
+                bool need_event = true) {
     Backend::Get()->SetDevice(gpu_);
     if (meta.single) {
       if (meta.pull_tensors.size() == 1) {
@@ -517,8 +517,12 @@ class AFTensorServer {
                 [](void *) {});
 
             rsp.kv_meta = kv_meta;
-            rsp.event = GetEvent();
-            rsp.event->Record();
+            if (need_event) {
+              rsp.event = GetEvent();
+              rsp.event->Record();
+            } else {
+              rsp.event = nullptr;
+            }
             response_queue_.Push(std::move(rsp));
             found = true;
             break;

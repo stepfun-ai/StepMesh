@@ -24,16 +24,16 @@ Customer::Customer(int app_id, int customer_id,
       recv_handle_(recv_handle),
       postoffice_(postoffice) {
   postoffice_->AddCustomer(this);
-  recv_thread_ =
-      std::unique_ptr<std::thread>(new std::thread(&Customer::Receiving, this));
+  // recv_thread_ =
+  //     std::unique_ptr<std::thread>(new std::thread(&Customer::Receiving, this));
 }
 
 Customer::~Customer() {
   postoffice_->RemoveCustomer(this);
-  Message msg;
-  msg.meta.control.cmd = Control::TERMINATE;
-  recv_queue_.Push(msg);
-  recv_thread_->join();
+  // Message msg;
+  // msg.meta.control.cmd = Control::TERMINATE;
+  // recv_queue_.Push(msg);
+  // recv_thread_->join();
 }
 
 int Customer::NewRequest(int recver) {
@@ -89,10 +89,13 @@ void Customer::Receiving() {
     }
     recv_handle_(recv);
     if (!recv.meta.request) {
-      // std::lock_guard<std::mutex> lk(tracker_mu_);
-      tracker_[recv.meta.timestamp]->response_count.fetch_add(
-          1, std::memory_order_release);
-      // tracker_cond_.notify_all();
+      auto t = tracker_[recv.meta.timestamp];
+      PS_CHECK_NE(t, nullptr) << "could not find tracker";
+#ifdef STEPAF_ENABLE_TRACE
+      t->request = recv.meta.request_trace;
+      t->response = recv.meta.response_trace;
+#endif  // STEPAF_ENABLE_TRACE
+      t->response_count.fetch_add(1, std::memory_order_release);
     }
   }
 }
@@ -103,7 +106,6 @@ void Customer::DirectProcess(Message& recv) {
     return;
   }
   recv_handle_(recv);
-  PS_LOG(TRACE) << "Processing Ts:" <<recv.meta.timestamp;
 
   if (!recv.meta.request) {
     auto t = tracker_[recv.meta.timestamp];

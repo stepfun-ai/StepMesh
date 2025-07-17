@@ -52,14 +52,12 @@ std::vector<ServerDataBatch> get_batch() {
   q_.clear();
   q_signal_.store(false);
   uint64_t done = GetNanosecond();
-
-  std::vector<uint64_t> ts = {start, sleep_done, done};
-  ServerDataBatch record = {0, {}, ts};
-  res.emplace_back(record);
   return res;
 }
 
-void respond(std::vector<torch::Tensor>& tensors, uint64_t handler) {
+void respond(std::vector<torch::Tensor>& tensors,
+             uint64_t handler,
+             bool need_event) {
   AFTensorMeta reqmeta;
   {
     std::lock_guard<std::mutex> lock(mu_);
@@ -71,20 +69,20 @@ void respond(std::vector<torch::Tensor>& tensors, uint64_t handler) {
   for (size_t i = 0; i < tensors.size(); ++i) {
     result.push_back({reqmeta.pull_tensors[i].key, std::move(tensors[i])});
   }
-  fserver_->Response(reqmeta, result);
+  fserver_->Response(reqmeta, result, need_event);
 }
 
 void respond_vec(torch::Tensor& ret_buffer,
-                 std::vector<torch::Tensor>& tensors_vec,
-                 std::vector<uint64_t>& handler_vec) {
+                 std::vector<torch::Tensor> &tensors_vec,
+                 std::vector<uint64_t> &handler_vec) {
   PS_CHECK_EQ(tensors_vec.size(), handler_vec.size());
 
   for (size_t i = 0; i < handler_vec.size(); i++) {
     int64_t tensor_shape_0 = tensors_vec[i].size(0);
-    // use torch::slice to slice buffer
     std::vector<torch::Tensor> sliced_buffer_list = {
-        ret_buffer.slice(0, 0, tensor_shape_0)};
-    respond(sliced_buffer_list, handler_vec[i]);
+        ret_buffer.slice(0, 0, tensor_shape_0)
+    };
+    respond(sliced_buffer_list, handler_vec[i], i == 0);
   }
 }
 
@@ -103,7 +101,7 @@ int push_pull(std::vector<torch::Tensor>& push_tensors,
   return fworker_->ZBatchPushPull(push_batch, pull_batch);
 }
 
-void wait(int handler) { 
+void wait(int handler) {
   fworker_->Wait(handler);
 }
 
@@ -193,16 +191,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
 
   m.def("wait", &wait, py::call_guard<py::none>());
   m.def("push_pull", &push_pull, py::call_guard<py::none>());
-  m.def("respond", &respond,
-        py::arg("tensors"),
-        py::arg("handler"),
-        py::call_guard<py::none>());
-
-  
-  m.def("respond_vec", &respond_vec,
-        py::call_guard<py::none>());
-  m.def("get_batch", &get_batch, py::call_guard<py::none>());
+  m.def("respond", &respond, py::call_guard<py::none>());
+  m.def("respond_vec", &respond_vec, py::call_guard<py::none>());
   // fetch_trace needs gil_scoped_release
+  m.def("get_batch", &get_batch, py::call_guard<py::gil_scoped_release>());
   m.def("fetch_trace", &fetch_trace, py::call_guard<py::gil_scoped_release>());
   // functions for communication performance tracing
   

@@ -64,7 +64,7 @@ void* GpuBackend::CreateEvent() {
   DoInitGpu();
   cudaEvent_t ev;
   auto status = cudaEventCreateWithFlags(
-      &ev, cudaEventDisableTiming | cudaEventBlockingSync);
+      &ev, cudaEventDisableTiming);
   PS_CHECK_EQ(status, cudaSuccess) << "cudaEventCreateWithFlags failed for gpu "
                                    << gpu_idx_;
   return (void*)(ev);
@@ -102,15 +102,24 @@ int GpuBackend::RecordEvent(void* event, void* stream) {
 }
 
 int GpuBackend::SyncEvent(void* event) {
-  DoInitGpu();
+  // DoInitGpu();
 
   PS_CHECK_NE(event, nullptr) << "backend cannot sync null event";
-  auto status = cudaEventSynchronize(reinterpret_cast<cudaEvent_t>(event));
+  cudaError_t status;
+  while (true) {
+    status = cudaEventQuery(reinterpret_cast<cudaEvent_t>(event));
+    if (status == cudaErrorNotReady) {
+      sched_yield();
+      continue;
+    }
+    break;
+  }
   if (status != cudaSuccess) {
     PS_LOG(WARNING) << "failed to sync cuda event: "
                     << " (" << cudaGetErrorString(status) << ")";
     return BACKEND_FAILED;
   }
+
   return BACKEND_OK;
 }
 
