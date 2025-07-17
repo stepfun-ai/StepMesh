@@ -24,3 +24,5 @@ cmake_build
 
 *.so
 *egg-info
+dist/
+dist/*
