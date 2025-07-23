@@ -17,6 +17,7 @@ namespace ps {
  */
 class GpuBackend : public Backend {
  public:
+  GpuBackend();
   int SetDevice(int dev) override;
   int GetDeviceId() override;
   at::Device GetDevice() override;
@@ -26,6 +27,17 @@ class GpuBackend : public Backend {
   int FreeEvent(void* event) override;
   int RecordEvent(void* event, void* stream) override;
   int SyncEvent(void* event) override;
+
+ private:
+  void* CreateCudaEvent();
+  int FreeCudaEvent(void* event);
+  int RecordCudaEvent(void* event, void* stream);
+  int SyncCudaEvent(void* event);
+
+  void* CreateMemEvent();
+  int FreeMemEvent(void* event);
+  int RecordMemEvent(void* event, void* stream);
+  int SyncMemEvent(void* event);
 
  private:
   inline void DoInitGpu() {
@@ -40,6 +52,7 @@ class GpuBackend : public Backend {
 
   /** \brief for cpu backend, the device stands for numa id */
   int gpu_idx_ = -1;
+  int mem_sync_ = 1;
 };
 
 }  // namespace ps

@@ -14,8 +14,8 @@
 // limitations under the License.
 // =============================================================================
 
-#ifndef PS_RDMA_UTILS_H_
-#define PS_RDMA_UTILS_H_
+#ifndef RDMA_UTILS_H_
+#define  RDMA_UTILS_H_
 
 #ifdef DMLC_USE_RDMA
 
@@ -23,7 +23,6 @@
 #include <fcntl.h>
 #include <netdb.h>
 #include <poll.h>
-#include <rdma/rdma_cma.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,6 +31,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <rdma/rdma_cma.h>
 
 #ifdef DMLC_USE_CUDA
 #include <cuda_runtime.h>
@@ -47,10 +47,11 @@
 #include <tuple>
 #include <unordered_map>
 #include <vector>
+#include <memory>
 
 #include "ps/internal/threadsafe_queue.h"
 #include "ps/internal/van.h"
-#include "van_common.h"
+#include "./van_common.h"
 
 namespace ps {
 
@@ -65,8 +66,8 @@ static const int kMaxHostnameLength = 16;
 // should have the same prefix with BytePS shared memory
 // for pcie reduce:  BytePS_Pcie_{pcie_id}_ShM_{JOB_ID}_{BYTEPS_KEY}
 // otherwise:        BytePS_ShM_{JOB_ID}_{BYTEPS_KEY}
-static const std::string kShmPrefix("BytePS_ShM_");
-static const std::string kShmPciePrefix("BytePS_Pcie_");
+static const std::string kShmPrefix("BytePS_ShM_");  // NOLINT
+static const std::string kShmPciePrefix("BytePS_Pcie_");  // NOLINT
 
 enum WRContextType {
   kRendezvousStartContext,
@@ -99,7 +100,7 @@ class MemoryAllocator {
     size = align_ceil(size, pagesize_);
 
     char *p;
-    aligned_malloc((void **)&p, size);
+    aligned_malloc(reinterpret_cast<void **>(&p), size);
     PS_CHECK(p);
 
     struct ibv_mr *mr = nullptr;
@@ -208,7 +209,8 @@ class BackendMemoryAllocator {
     std::lock_guard<std::mutex> lock(mu_);
     auto it = key_to_mr_.find(key);
     if (it == key_to_mr_.end()) {
-      PS_LOG(ERROR) << "Key " << key << " not found in allocator for GetRemoteKey.";
+      PS_LOG(ERROR) << "Key " << key
+                    << " not found in allocator for GetRemoteKey.";
       return 0;
     }
     PS_CHECK(it->second) << "MR is null for GPU buffer with key " << key;
@@ -246,16 +248,16 @@ struct RendezvousReply {
 #else
   uint64_t addr;
   uint32_t rkey;
-#endif // STEPAF_USE_GDR
+#endif  // STEPAF_USE_GDR
   uint64_t origin_addr;
   uint32_t idx;
 };
 
 struct BufferContext {
-  char* buffer = nullptr; // Original buffer, for non-GDR or client-side GDR
+  char* buffer = nullptr;  // Original buffer, for non-GDR or client-side GDR
 #ifdef STEPAF_USE_GDR
   char* meta_buffer = nullptr;   // For server-side GDR meta
-  void* gpu_data_buffer = nullptr; // For server-side GDR data
+  void* gpu_data_buffer = nullptr;  // For server-side GDR data
 #endif
   int meta_len = 0;
   size_t data_num = 0;
@@ -286,8 +288,8 @@ typedef std::tuple<uint64_t, uint32_t, uint64_t, uint32_t, uint32_t,
     RemoteTuple;
 #else
 // <remote_addr, rkey, idx, local_addr>
-typedef std::tuple<uint64_t, uint32_t, uint32_t, MessageBuffer *> RemoteTuple;
-#endif // STEPAF_USE_GDR
+typedef std::tuple<uint64_t, uint32_t, uint32_t, MessageBuffer*> RemoteTuple;
+#endif  // STEPAF_USE_GDR
 
 // recver, <remote_addr, rkey, idx>
 typedef std::unordered_map<int, RemoteTuple> RemoteAndLocalAddress;
@@ -315,4 +317,4 @@ int RoundUp(int x, int y) { return DivUp(x, y) * y; }
 };  // namespace ps
 
 #endif  // DMLC_USE_RDMA
-#endif  // PS_RDMA_VAN_H_
+#endif  // RDMA_UTILS_H_

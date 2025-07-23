@@ -13,8 +13,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 // =============================================================================
-#ifndef PS_RDMA_COMMON_H_
-#define PS_RDMA_COMMON_H_
+#ifndef VAN_COMMON_H_
+#define  VAN_COMMON_H_
+
+#include <queue>
 
 #if defined(DMLC_USE_RDMA) || defined(DMLC_USE_FABRIC)
 #include <unistd.h>
@@ -95,7 +97,7 @@ class AddressPool {
     return ptr;
   }
 
-  // TODO: make the address pool size dynamic
+  // TODO(none): make the address pool size dynamic
   T *GetAddress(uint32_t index) {
     std::lock_guard<std::mutex> lk(mu_);
     return PS_CHECK_NOTNULL(table_[index]);
@@ -126,4 +128,4 @@ class AddressPool {
 };  // namespace ps
 
 #endif  // DMLC_USE_RDMA || DMLC_USE_FABRIC
-#endif  // PS_RDMA_COMMON_H_
+#endif  // VAN_COMMON_H_

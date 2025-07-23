@@ -30,10 +30,8 @@ class Postoffice;
 struct CustomerTracker {
   std::atomic<int> count;
   std::atomic<int> response_count;
-#ifdef STEPAF_ENABLE_TRACE
   struct Trace request;
   struct Trace response;
-#endif // STEPAF_ENABLE_TRACE
 };
 
 class Customer {
@@ -103,9 +101,7 @@ class Customer {
 
   void DirectProcess(Message& recv);
 
-#ifdef STEPAF_ENABLE_TRACE
   std::pair<struct Trace, struct Trace> FetchTrace(int timestamp);
-#endif // STEPAF_ENABLE_TRACE
 
  private:
   /**

@@ -8,11 +8,14 @@
 #include <mutex>
 #include <memory>
 #include <vector>
+#include <unordered_map>
+#include <string>
 
 #include "ps/internal/customer.h"
 #include "ps/internal/env.h"
 #include "ps/internal/van.h"
 #include "ps/range.h"
+
 namespace ps {
 
 /**
@@ -261,7 +264,7 @@ class Postoffice {
    * \param instance_idx the offset of the instance inside the group.
    * It should be less than DMLC_GROUP_SIZE
    */
-  Postoffice(int instance_idx);
+  explicit Postoffice(int instance_idx);
   ~Postoffice() { delete van_; }
 
   /**

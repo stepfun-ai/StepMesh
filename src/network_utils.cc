@@ -3,8 +3,10 @@
  */
 
 #include <sstream>
+#include <cstdio>
+#include <string>
 
-#include "network_utils.h"
+#include "network_utils.h"  // NOLINT
 
 namespace ps {
 

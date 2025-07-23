@@ -30,4 +30,4 @@ class CpuBackend : public Backend {
 
 }  // namespace ps
 
-#endif  // BACKEND_CPU_BACKEND_H_
+#endif  // PS_INTERNAL_CPU_BACKEND_H_

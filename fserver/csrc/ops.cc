@@ -1,29 +1,47 @@
 /* Copyright (c) 2025, StepFun Authors. All rights reserved. */
-#include <atomic>
 
 #include <execinfo.h>
 #include <stdio.h>
 #include <signal.h>
 #include <unistd.h>
+#include<immintrin.h>
 
-#include "util.h"
-using namespace ps;
+#include <atomic>
+#include <tuple>
+#include <unordered_map>
+#include <iostream>
+#include <utility>
+#include <string>
+#include <vector>
 
-ps::AFTensorServer* fserver_;
-ps::AFTensorWorker* fworker_;
+#include "./util.h"
+
+using ps::Node;
+using ps::AFTensorServer;
+using ps::AFTensorWorker;
+using ps::AFTensorMeta;
+using ps::KeyTensorBatch;
+using ps::KeyTensor;
+using ps::Backend;
+
+AFTensorServer* fserver_;
+AFTensorWorker* fworker_;
 Node::Role role_;
 int gpu_ = 0;
 int node_rank_ = 0;
 int group_size_ = 1;
 int instance_id_ = 0;
+int num_worker_ = 1;
+uint64_t worker_mask_ = 0x1;
 
-typedef std::tuple<uint64_t, std::vector<torch::Tensor>, std::vector<uint64_t>> ServerDataBatch;
+typedef std::tuple<uint64_t, std::vector<torch::Tensor>, std::vector<uint64_t>>
+    ServerDataBatch;
 
 std::mutex mu_;
 uint64_t handler_counter_ = 0;
 std::unordered_map<uint64_t, AFTensorMeta> meta_map_;
-std::vector<ServerDataBatch> q_;
-std::atomic<bool> q_signal_;
+std::vector<std::deque<ServerDataBatch>> q_;
+std::atomic<uint64_t> q_signal_;
 
 void SumHandler(const AFTensorMeta& req_meta, AFTensorServer* server) {
   std::vector<torch::Tensor> tensors;
@@ -35,23 +53,37 @@ void SumHandler(const AFTensorMeta& req_meta, AFTensorServer* server) {
   {
     std::lock_guard<std::mutex> lock(mu_);
     meta_map_[handler_counter_] = req_meta;
-    q_.emplace_back(handler_counter_, std::move(tensors), keys);
-    q_signal_.store(true);
+
+    q_[req_meta.sender_rank].emplace_back(handler_counter_,
+                                          std::move(tensors),
+                                          keys);
+    q_signal_.fetch_or(1 << req_meta.sender_rank);
   }
   ++handler_counter_;
 }
 
 std::vector<ServerDataBatch> get_batch() {
-  uint64_t start = GetNanosecond();
-  while (!q_signal_.load()) {
-    sched_yield();
+  int spin_max = 1000;
+  int spin_count = 0;
+  while (q_signal_.load() != worker_mask_) {
+    if (spin_count < spin_max) {
+      spin_count++;
+    } else {
+      spin_count = 0;
+      _mm_pause();
+    }
   }
-  uint64_t sleep_done = GetNanosecond();
+
   std::lock_guard<std::mutex> lock(mu_);
-  std::vector<ServerDataBatch> res = std::move(q_);
-  q_.clear();
-  q_signal_.store(false);
-  uint64_t done = GetNanosecond();
+  std::vector<ServerDataBatch> res;
+
+  uint64_t new_mask = worker_mask_;
+  for (int i = 0; i < num_worker_; i++) {
+    res.emplace_back(std::move(q_[i][0]));
+    q_[i].pop_front();
+    new_mask &= ~((q_[i].empty()) << i);
+  }
+  q_signal_.store(new_mask);
   return res;
 }
 
@@ -73,10 +105,9 @@ void respond(std::vector<torch::Tensor>& tensors,
 }
 
 void respond_vec(torch::Tensor& ret_buffer,
-                 std::vector<torch::Tensor> &tensors_vec,
-                 std::vector<uint64_t> &handler_vec) {
+                 std::vector<torch::Tensor>& tensors_vec,
+                 std::vector<uint64_t>& handler_vec) {
   PS_CHECK_EQ(tensors_vec.size(), handler_vec.size());
-
   for (size_t i = 0; i < handler_vec.size(); i++) {
     int64_t tensor_shape_0 = tensors_vec[i].size(0);
     std::vector<torch::Tensor> sliced_buffer_list = {
@@ -93,10 +124,14 @@ int push_pull(std::vector<torch::Tensor>& push_tensors,
   auto push_batch = KeyTensorBatch(push_tensors.size());
   auto pull_batch = KeyTensorBatch(pull_tensors.size());
   for (size_t i = 0; i < push_tensors.size(); i++) {
-    push_batch[i] = KeyTensor{uint64_t(push_keys[i]), std::move(push_tensors[i])};
+    push_batch[i] = KeyTensor{
+        static_cast<uint64_t>(push_keys[i]), std::move(push_tensors[i])
+    };
   }
   for (size_t i = 0; i < pull_tensors.size(); i++) {
-    pull_batch[i] = KeyTensor{uint64_t(pull_keys[i]), std::move(pull_tensors[i])};
+    pull_batch[i] = KeyTensor{
+        static_cast<uint64_t>(pull_keys[i]), std::move(pull_tensors[i])
+    };
   }
   return fworker_->ZBatchPushPull(push_batch, pull_batch);
 }
@@ -124,29 +159,35 @@ void barrier(bool include_server, bool include_worker) {
 }
 
 void init() {
-  q_signal_.store(false);
-  std::string role_str = GetEnv("DMLC_ROLE", "server");
-  role_ = GetRole(role_str);
+  std::string role_str = ps::GetEnv("DMLC_ROLE", "server");
+  role_ = ps::GetRole(role_str);
 
   ps::Environment::Get()->find("STEPAF_GPU", &gpu_, gpu_);
   ps::Environment::Get()->find("DMLC_GROUP_SIZE", &group_size_, group_size_);
   ps::Environment::Get()->find("DMLC_NODE_RANK", &node_rank_, node_rank_);
   ps::Environment::Get()->find("DMLC_INSTANCE_ID", &instance_id_, gpu_);
+  ps::Environment::Get()->find("DMLC_NUM_WORKER", &num_worker_, num_worker_);
 
-  CUDA_CALL(cudaSetDevice(gpu_));
+  worker_mask_ = (1 << num_worker_) - 1;
+  q_.resize(num_worker_);
+  q_signal_.store(0);;
+
   ps::StartPS(0, role_,  group_size_ * node_rank_ + gpu_, true);
+  Backend::Get()->SetDevice(gpu_);
   if (role_ == Node::WORKER) {
     fworker_ = new AFTensorWorker(instance_id_);
     barrier(true, true);
   } else if (role_ == Node::SERVER) {
     fserver_ = new AFTensorServer(instance_id_);
     fserver_->SetRequestHandle(SumHandler);
-    RegisterExitCallback([]() { delete fserver_; });
+    ps::RegisterExitCallback([]() { delete fserver_; });
     barrier(true, true);
   }
 }
 
-void register_recv_buffer(torch::Tensor& tensor, std::vector<int> worker_ranks, std::vector<uint64_t> push_keys) {
+void register_recv_buffer(torch::Tensor& tensor,
+                          std::vector<int>& worker_ranks,
+                          std::vector<uint64_t>& push_keys) {
   fserver_->RegisterRecvTensor(tensor, worker_ranks, push_keys);
 }
 
@@ -185,19 +226,27 @@ std::vector<uint64_t> fetch_trace(int handler) {
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("init", &init, py::call_guard<py::gil_scoped_release>());
-
-  m.def("register_recv_buffer", &register_recv_buffer, py::call_guard<py::gil_scoped_release>());
   m.def("stop", &stop, py::call_guard<py::gil_scoped_release>());
 
-  m.def("wait", &wait, py::call_guard<py::none>());
+  m.def("register_recv_buffer",
+        &register_recv_buffer,
+        py::call_guard<py::gil_scoped_release>());
+
+  // APIs for Attention Instances
   m.def("push_pull", &push_pull, py::call_guard<py::none>());
-  m.def("respond", &respond, py::call_guard<py::none>());
+  m.def("wait", &wait, py::call_guard<py::none>());
+
+  // APIs for FFN Instances
+  m.def("get_batch", &get_batch, py::call_guard<py::none>());
+  m.def("respond", &respond,
+        py::arg("tensors"),
+        py::arg("handler"),
+        py::arg("need_event") = false,
+        py::call_guard<py::none>());
   m.def("respond_vec", &respond_vec, py::call_guard<py::none>());
+
   // fetch_trace needs gil_scoped_release
-  m.def("get_batch", &get_batch, py::call_guard<py::gil_scoped_release>());
   m.def("fetch_trace", &fetch_trace, py::call_guard<py::gil_scoped_release>());
-  // functions for communication performance tracing
-  
   m.def("get_all_handlers", &get_all_handlers, py::call_guard<py::none>());
   m.def("barrier", &barrier, py::call_guard<py::none>());
 }

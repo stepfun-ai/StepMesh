@@ -109,7 +109,7 @@ def print_thread():
         time_list.append((start, end))
         cost_list.append(costs)
 
-        if len(time_list) == 10000:
+        if len(time_list) == 5000:
             overall_list = []
             python_req_costs = [[] for _ in range(3)]
             req_send_costs = [[] for _ in range(3)]
@@ -122,13 +122,11 @@ def print_thread():
 
             for i in range(len(time_list)):
                 start, end = time_list[i]
-                start *= 1e3
-                end *= 1e3
 
-                overall_list.append(end - start)
+                overall_list.append((end - start)/1e6)
                 for j in range(3):
-                    python_req_costs[j].append(cost_list[i][j][0] / 1000000.0 - start)
-                    python_rsp_costs[j].append(end - cost_list[i][j][7] / 1000000.0)
+                    python_req_costs[j].append(cost_list[i][j][0] / 1000000.0 - start/1e6)
+                    python_rsp_costs[j].append(end/1e6 - cost_list[i][j][7] / 1000000.0)
                     req_send_costs[j].append((cost_list[i][j][1] - cost_list[i][j][0]) / 1000000.0)
                     req_recv_costs[j].append((cost_list[i][j][3] - cost_list[i][j][2]) / 1000000.0)
                     process_costs[j].append((cost_list[i][j][4] - cost_list[i][j][3]) / 1000000.0)
@@ -186,7 +184,7 @@ if is_worker:
     idx = 0
     def worker():
         global idx
-        start = time.perf_counter()
+        start = f.GetNanoSecond()
         handler = f.push_pull(
             inp_tensors_buffers[idx % 3],
             inp_tensors_keys[idx % 3],
@@ -194,13 +192,13 @@ if is_worker:
             out_tensors_keys[idx % 3],
         )
         idx += 1
-        end1 = time.perf_counter()
+        # end1 = f.GetNanoSecond()
 
         handlers = f.get_all_handlers(handler)
-        end2 = time.perf_counter()
+        # end2 = f.GetNanoSecond()
 
         f.wait(handler)
-        end = time.perf_counter()
+        end = f.GetNanoSecond()
 
         costs = [f.fetch_trace(handler) for handler in handlers]
         print_queue.put((start, end, costs))
@@ -226,7 +224,7 @@ elif is_server:
 
         for res in res_list:
             comm_id, batch, keys = res
-            f.respond(out_tensors_buffers, comm_id)
+            f.respond(out_tensors_buffers, comm_id, True)
     for _ in range(num_iters):
         server()
 

@@ -82,7 +82,8 @@ class SArray {
   template <typename W>
   void operator=(const SArray<W>& arr) {
     size_ = arr.size() * sizeof(W) / sizeof(V);
-    PS_CHECK_EQ(size_ * sizeof(V), arr.size() * sizeof(W)) << "cannot be divided";
+    PS_CHECK_EQ(size_ * sizeof(V), arr.size() * sizeof(W))
+        << "cannot be divided";
     capacity_ = arr.capacity() * sizeof(W) / sizeof(V);
     ptr_ = std::shared_ptr<V>(arr.ptr(), reinterpret_cast<V*>(arr.data()));
     // copy device info

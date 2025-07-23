@@ -3,15 +3,19 @@
  *  Modifications Copyright (C) Mellanox Technologies Ltd. 2020.
  *  Modifications Copyright (C) by StepAI Contributors. 2025.
  */
-#include "ps/internal/postoffice.h"
 
 #include <unistd.h>
 
+#include <string>
 #include <chrono>
 #include <thread>
+#include <utility>
+#include <unordered_map>
+#include <vector>
 
 #include "ps/base.h"
 #include "ps/internal/message.h"
+#include "ps/internal/postoffice.h"
 
 namespace ps {
 
@@ -67,7 +71,8 @@ void Postoffice::InitEnvironment() {
     PS_LOG(INFO) << "enable UCX for networking. group_size=" << group_size_;
     van_ = Van::Create("ucx", this);
   } else {
-    PS_LOG(INFO) << "Creating Van: " << van_type << ". group_size=" << group_size_;
+    PS_LOG(INFO) << "Creating Van: " << van_type
+                 << ". group_size=" << group_size_;
     van_ = Van::Create(van_type, this);
   }
   val = PS_CHECK_NOTNULL(Environment::Get()->find("DMLC_NUM_WORKER"));

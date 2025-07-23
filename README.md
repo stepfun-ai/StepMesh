@@ -73,44 +73,26 @@ To debug, set `PS_VERBOSE=1` to see important logs during connection setup, and 
 
 ```bash
 # ROLE: joinly run scheduler, worker and server; RNIC: your first rdma nic; 
-ROLE=joint RNIC=brianpf_bond0 bash tests/fserver/run.sh
+ROLE=joint RNIC=brainpf_bond0 bash tests/fserver/run_single_gpu.sh
 ```
 - Multiple GPU Exmaple: Suppose you want to run with 8 workers and 8 servers on different GPUs of the same server.
 ```bash
 # ROLE: joinly run scheduler, worker and server; RNIC: your first rdma nic; 
-ROLE=joint RNIC=brianpf_bond0 bash tests/fserver/run_multigpu.sh
+ROLE=joint RNIC=brainpf_bond0 bash tests/fserver/run_multi_gpu.sh
 ```
 
 ### 2. Two-Node Example
 - Run scheduler and servers
 ```bash
 # Server
-ROLE=server bash tests/run_multigpu.sh
+ROLE=server bash tests/fserver/run_multi_gpu.sh
 # the first line prints scheduler ip
 ```
 
 - Run workers
 ```bash
 # worker
-ROLE=worker RNIC=brianpf_bond0 bash tests/fserver/run_multigpu.sh ${scheduler ip}
-```
-
-### 3. Multiple-Node Example
-
-- Run scheduler and servers
-
-```bash
-# Server
-NUM_WORKER=2 ROLE=server bash tests/run_multigpu.sh
-# the first line prints scheduler ip
-```
-
-- Run workers
-```bash
-# First worker
-NUM_WORKER=2 NODE_RANK=0 ROLE=worker bash tests/run_multigpu.sh ${scheduler ip}
-# Second worker
-NUM_WORKER=2 NODE_RANK=1 ROLE=worker bash tests/run_multigpu.sh ${scheduler ip}
+ROLE=worker RNIC=brainpf_bond0 bash tests/fserver/run_multi_gpu.sh ${scheduler ip}
 ```
 
 For more test cases and examples, please refer to [tests](./tests).

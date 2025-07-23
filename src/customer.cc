@@ -2,19 +2,24 @@
  *  Copyright (c) 2015 by Contributors
  *  Modifications Copyright (C) by StepAI Contributors. 2025.
  */
-#include "ps/internal/customer.h"
 
+#include <emmintrin.h>
+
+#include <limits>
+#include <utility>
 #include <atomic>
 #include <fstream>
 #include <list>
 
 #include "ps/internal/postoffice.h"
 #include "ps/internal/threadsafe_queue.h"
-#include "emmintrin.h"
+#include "ps/internal/customer.h"
 
 namespace ps {
-const int Node::kEmpty = std::numeric_limits<short>::max();
-const int Meta::kEmpty = std::numeric_limits<short>::max();
+
+const int Node::kEmpty = std::numeric_limits<int16_t>::max();
+const int Meta::kEmpty = std::numeric_limits<int16_t>::max();
+const int kMaxSpinCount = 1000;
 
 Customer::Customer(int app_id, int customer_id,
                    const Customer::RecvHandle& recv_handle,
@@ -24,16 +29,10 @@ Customer::Customer(int app_id, int customer_id,
       recv_handle_(recv_handle),
       postoffice_(postoffice) {
   postoffice_->AddCustomer(this);
-  // recv_thread_ =
-  //     std::unique_ptr<std::thread>(new std::thread(&Customer::Receiving, this));
 }
 
 Customer::~Customer() {
   postoffice_->RemoveCustomer(this);
-  // Message msg;
-  // msg.meta.control.cmd = Control::TERMINATE;
-  // recv_queue_.Push(msg);
-  // recv_thread_->join();
 }
 
 int Customer::NewRequest(int recver) {
@@ -50,12 +49,8 @@ int Customer::NewRequest(int recver) {
 }
 
 void Customer::WaitRequest(int timestamp) {
-  // std::unique_lock<std::mutex> lk(tracker_mu_);
-  int spin_count = 0;
-  const int kMaxSpinCount = 1000;
-  // tracker_mu_.lock();
   auto* req = tracker_[timestamp];
-  // tracker_mu_.unlock();
+  int spin_count = 0;
   while (req->count.load(std::memory_order_acquire)
          != req->response_count.load(std::memory_order_acquire)) {
     if (spin_count < kMaxSpinCount) {
@@ -66,7 +61,7 @@ void Customer::WaitRequest(int timestamp) {
   }
 #ifdef STEPAF_ENABLE_TRACE
   req->response.process = GetNanosecond();
-#endif
+#endif  // STEPAF_ENABLE_TRACE
 }
 
 int Customer::NumResponse(int timestamp) {
@@ -118,12 +113,13 @@ void Customer::DirectProcess(Message& recv) {
   }
 }
 
-#ifdef STEPAF_ENABLE_TRACE
 std::pair<struct Trace, struct Trace> Customer::FetchTrace(int timestamp) {
+#ifdef STEPAF_ENABLE_TRACE
   std::unique_lock<std::mutex> lk(tracker_mu_);
   auto p = tracker_[timestamp];
   return std::make_pair(p->request, p->response);
-}
 #endif  // STEPAF_ENABLE_TRACE
+  return std::make_pair(Trace(), Trace());
+}
 
 }  // namespace ps

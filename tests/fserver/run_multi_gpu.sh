@@ -8,7 +8,7 @@ function cleanup() {
 trap cleanup EXIT
 # cleanup
 
-export BIN=${BIN:-test_remote_moe}
+export BIN=${BIN:-test_fserver}
 # common setup
 export DMLC_INTERFACE=${RNIC:-brainpf_bond0}
 export SCHEDULER_IP=$(ip -o -4 addr | grep ${DMLC_INTERFACE} | awk '{print $4}' | cut -d'/' -f1)

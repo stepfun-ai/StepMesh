@@ -4,15 +4,21 @@
  *  Modifications Copyright (C) by StepAI Contributors. 2025.
  */
 // clang-format off
-#include "ps/internal/van.h"
-#include "ps/internal/postoffice.h"
 
-#include <string.h>
-
+#include <string>
 #include <fstream>
-#include <set>
 #include <sstream>
 #include <thread>
+#include <vector>
+#include <memory>
+#include <unordered_map>
+#include <unordered_set>
+#include <algorithm>
+
+#include "ps/base.h"
+#include "ps/sarray.h"
+#include "ps/internal/van.h"
+#include "ps/internal/postoffice.h"
 
 #include "./fabric_van.h"
 #include "./meta.h"
@@ -23,9 +29,7 @@
 #include "./ucx_van.h"
 #include "./zmq_van.h"
 #include "./tp_van.h"
-#include "ps/base.h"
-#include "ps/internal/customer.h"
-#include "ps/sarray.h"
+
 // clang-format on
 
 #define USE_PROFILING
@@ -319,7 +323,7 @@ void Van::UpdateLocalID(Message *msg, std::unordered_set<int> *deadnodes_set,
   if (msg->meta.sender == Meta::kEmpty) {
     PS_CHECK(is_scheduler_);
     PS_CHECK_EQ(ctrl.node.size(), 1);
-    if (static_cast<int>(nodes->control.node.size()) < (int)num_nodes) {
+    if (nodes->control.node.size() < static_cast<size_t>(num_nodes)) {
       nodes->control.node.push_back(ctrl.node[0]);
     } else {
       // some node dies and restarts
@@ -550,12 +554,12 @@ void Van::Start(int customer_id, bool standalone) {
       if (interface == "auto" || interface == "AUTO") {
         GetInterfaceAndIPByCurrentGpu(&interface, &ip);
         PS_LOG(INFO) << "automatic detect interface and ip from gpu: "
-                  << interface << " (" << ip << ")" ;
+                  << interface << " (" << ip << ")";
         Environment::Get()->set("DMLC_NODE_HOST", ip);
         Environment::Get()->set("DMLC_INTERFACE", interface);
-      }else{
+      } else {
         PS_LOG(INFO) << " interface and ip from env: "
-                  << interface << " (" << ip << ")" ;
+                  << interface << " (" << ip << ")";
       }
       if (ip.empty()) {
         if (!interface.size()) {
@@ -700,6 +704,7 @@ int Van::Send(Message &msg) {
 }
 
 void Van::Receiving() {
+  BindCpuCore(4, 1);
   Meta nodes;
   Meta recovery_nodes;  // store recovery nodes
   recovery_nodes.control.cmd = Control::ADD_NODE;
@@ -769,12 +774,12 @@ void Van::PackMeta(const Meta &meta, char **meta_buf, int *buf_size) {
     *meta_buf = new char[*buf_size + 1];
   }
 
-  RawMeta *raw = (RawMeta *)*meta_buf;
+  RawMeta *raw = reinterpret_cast<RawMeta*>(*meta_buf);
   bzero(raw, sizeof(RawMeta));
   char *raw_body = *meta_buf + sizeof(RawMeta);
   auto data_type_len = meta.data_type.size();
-  int *raw_data_type = (int *)(raw_body + meta.body.size());
-  RawNode *raw_node = (RawNode *)(raw_data_type + data_type_len);
+  int *raw_data_type = reinterpret_cast<int*>(raw_body + meta.body.size());
+  RawNode *raw_node = reinterpret_cast<RawNode*>(raw_data_type + data_type_len);
 
   // convert into raw buffer
   raw->head = meta.head;
@@ -789,8 +794,12 @@ void Van::PackMeta(const Meta &meta, char **meta_buf, int *buf_size) {
   raw->simple_app = meta.simple_app;
   raw->customer_id = meta.customer_id;
 #ifdef STEPAF_ENABLE_TRACE
-  memcpy(&raw->request_trace, &meta.request_trace, sizeof(meta.request_trace));
-  memcpy(&raw->response_trace, &meta.response_trace, sizeof(meta.response_trace));
+  memcpy(&raw->request_trace,
+         &meta.request_trace,
+         sizeof(meta.request_trace));
+  memcpy(&raw->response_trace,
+         &meta.response_trace,
+         sizeof(meta.response_trace));
 #endif  // STEPAF_ENABLE_TRACE
   int data_type_count = 0;
   for (auto d : meta.data_type) {
@@ -863,11 +872,13 @@ void Van::PackMeta(const Meta &meta, char **meta_buf, int *buf_size) {
 }
 
 void Van::UnpackMeta(const char *meta_buf, int buf_size, Meta *meta) {
-  RawMeta *raw = (RawMeta *)meta_buf;
+  auto* raw = reinterpret_cast<const RawMeta*>(meta_buf);
   const char *raw_body = meta_buf + sizeof(RawMeta);
-  const int *raw_data_type = (const int *)(raw_body + raw->body_size);
+  const int *raw_data_type = reinterpret_cast<const int*>(
+      raw_body + raw->body_size);
   auto data_type_len = raw->data_type_size;
-  const RawNode *raw_node = (RawNode *)(raw_data_type + data_type_len);
+  const RawNode *raw_node = reinterpret_cast<const RawNode*>
+      (raw_data_type + data_type_len);
 
   // to meta
   meta->head = raw->head;
@@ -893,10 +904,13 @@ void Van::UnpackMeta(const char *meta_buf, int buf_size, Meta *meta) {
   meta->control.msg_sig = ctrl->msg_sig;
 
 #ifdef STEPAF_ENABLE_TRACE
+  meta->request_trace.pre_start = raw->request_trace.pre_start;
   meta->request_trace.start = raw->request_trace.start;
   meta->request_trace.postsend = raw->request_trace.postsend;
   if (!meta->request) {
-    memcpy(&meta->request_trace, &raw->request_trace, sizeof(raw->request_trace));
+    memcpy(&meta->request_trace,
+           &raw->request_trace,
+           sizeof(raw->request_trace));
     meta->response_trace.start = raw->response_trace.start;
     meta->response_trace.postsend = raw->response_trace.postsend;
   }

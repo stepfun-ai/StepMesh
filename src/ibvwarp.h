@@ -11,14 +11,14 @@
 #include <cstdio>
 #include <cstring>
 
-#ifndef PS_IBVWARP_H_
-#define  PS_IBVWARP_H_
+#ifndef IBVWARP_H_
+#define  IBVWARP_H_
 namespace ps {
 
 // Attempt to load a specific symbol version - fail silently
 #define LOAD_SYM_VERSION(handle, symbol, funcptr, version) \
   do {                                                     \
-    cast = (void**)&funcptr;                               \
+    cast = reinterpret_cast<void**>(&funcptr);             \
     *cast = dlvsym(handle, symbol, version);               \
   } while (0)
 
@@ -87,14 +87,14 @@ int wrap_mlx5dv_modify_qp_lag_port(struct ibv_qp* qp, uint8_t port_num) {
                           mlx5dv_internal_modify_qp_lag_port(qp, port_num), 0);
 }
 
-static pthread_once_t initOnceControl2 = PTHREAD_ONCE_INIT;
+static pthread_once_t initOnceControl = PTHREAD_ONCE_INIT;
 int initResult = -1;
 int wrap_ibv_symbols(void) {
-  pthread_once(&initOnceControl2,
+  pthread_once(&initOnceControl,
                []() { initResult = buildMlx5dvSymbols(&mlx5dvSymbols); });
   return initResult;
 }
 
 }  // namespace ps
 
-#endif  // PS_IBVWARP_H_
+#endif  // IBVWARP_H_

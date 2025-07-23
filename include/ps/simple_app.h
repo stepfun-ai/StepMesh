@@ -2,7 +2,7 @@
  *  Copyright (c) 2015 by Contributors
  */
 #ifndef PS_SIMPLE_APP_H_
-#define PS_SIMPLE_APP_H_
+#define  PS_SIMPLE_APP_H_
 #include <string>
 
 #include "ps/internal/message.h"
@@ -133,7 +133,7 @@ class SimpleApp {
 inline SimpleApp::SimpleApp(int app_id, int customer_id, Postoffice* postoffice)
     : SimpleApp() {
   postoffice_ = postoffice;
-  using namespace std::placeholders;
+  using std::placeholders::_1;
   obj_ = new Customer(app_id, customer_id,
                       std::bind(&SimpleApp::Process, this, _1), postoffice_);
 }

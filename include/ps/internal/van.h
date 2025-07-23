@@ -3,7 +3,7 @@
  *  Modifications Copyright (C) Mellanox Technologies Ltd. 2020.
  */
 #ifndef PS_INTERNAL_VAN_H_
-#define PS_INTERNAL_VAN_H_
+#define  PS_INTERNAL_VAN_H_
 #include <atomic>
 #include <ctime>
 #include <functional>
@@ -45,7 +45,7 @@ class Van {
   static Van *Create(const std::string &type, Postoffice *postoffice);
 
   /** \brief constructer, do nothing. use \ref Start for real start */
-  Van(Postoffice *postoffice) : postoffice_(postoffice) {}
+  explicit Van(Postoffice *postoffice) : postoffice_(postoffice) {}
 
   /**\brief deconstructer, do nothing. use \ref Stop for real stop */
   virtual ~Van() {}
@@ -125,7 +125,11 @@ class Van {
     PS_CHECK(false) << "recv buffer registration is not supported";
   }
 
-  virtual void QueryRecvBuffer(uint64_t key, int node_id, void** buffer, size_t* size, uint32_t* rkey) {
+  virtual void QueryRecvBuffer(uint64_t key,
+                               int node_id,
+                               void** buffer,
+                               size_t* size,
+                               uint32_t* rkey) {
     PS_CHECK(false) << "recv buffer registration is not supported";
   }
 

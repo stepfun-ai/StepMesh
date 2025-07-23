@@ -59,7 +59,6 @@ if __name__ == "__main__":
                         '-DDMLC_USE_CUDA', 
                         '-DSTEPAF_USE_GDR',
                         '-DDMLC_USE_RDMA', 
-                        '-DSTEPAF_ENABLE_TRACE',
                         '-DSTEPAF_USE_TORCH',
                     ],
                     'nvcc': ['-O3', '-gencode', 'arch=compute_70,code=sm_70', 

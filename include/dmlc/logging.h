@@ -123,7 +123,6 @@ inline void InitLogging(const char *argv0) {
 #define PS_LOG_FATAL LOG_FATAL.stream()
 #define LOG_QFATAL LOG_FATAL
 
-
 #define PS_VLOG(x) PS_LOG_IF(INFO, x <= PS_VERBOSE).stream()
 
 #define PS_LOG_ERROR   PS_VLOG(0)
@@ -263,6 +262,16 @@ inline std::string StackTrace() {
 #endif  // DMLC_LOG_STACK_TRACE
 
 #if DMLC_LOG_FATAL_THROW == 0
+
+class LogMessageNull :public LogMessage {
+  public:
+  LogMessageNull(){
+    std::ostringstream oss;
+    return oss;
+  }
+
+}
+
 class LogMessageFatal : public LogMessage {
  public:
   LogMessageFatal(const char *file, int line) : LogMessage(file, line) {}

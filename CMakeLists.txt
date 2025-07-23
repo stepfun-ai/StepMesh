@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.22 FATAL_ERROR)
 project(af LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -fPIC -O3 -Wall -finline-functions")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -fPIC -O3 -Wall -finline-functions  -msse2 ")
 
 # import pytorch library
 find_package (Python COMPONENTS Interpreter Development)
@@ -23,7 +23,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/Modules)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DDMLC_USE_ZMQ -DDMLC_USE_CUDA -DSTEPAF_USE_GDR -DDMLC_USE_RDMA -DSTEPAF_ENABLE_TRACE")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DDMLC_USE_ZMQ -DDMLC_USE_CUDA -DSTEPAF_USE_GDR -DDMLC_USE_RDMA")
 
 link_directories("${PROJECT_SOURCE_DIR}/deps/lib")
 

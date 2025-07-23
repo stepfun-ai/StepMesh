@@ -135,8 +135,10 @@ inline void StartPS(int customer_id, Node::Role role, int rank, bool do_barrier,
                     const char *argv0 = nullptr) {
   Backend::Register("CPU", new CpuBackend());
   Backend::Register("GPU", new GpuBackend());
-
   int group_size = 1;
+
+  BindCpuCore(0, 2);
+
   Environment::Get()->find("DMLC_GROUP_SIZE", &group_size, group_size);
   Postoffice::Init(role);
   if (group_size == 1 || role == Node::SCHEDULER) {

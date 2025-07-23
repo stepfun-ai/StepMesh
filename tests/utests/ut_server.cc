@@ -13,7 +13,8 @@
 std::vector<at::Tensor> g_tensors;
 
 void SumHandler(const AFTensorMeta& req_meta, AFTensorServer* server) {
-  auto sum = at::zeros_like(req_meta.push_tensors[0].val, req_meta.push_tensors[0].val.scalar_type());
+  auto sum = at::zeros_like(req_meta.push_tensors[0].val,
+                            req_meta.push_tensors[0].val.scalar_type());
   for (auto t : req_meta.push_tensors) {
     sum += t.val;
   }
@@ -22,12 +23,12 @@ void SumHandler(const AFTensorMeta& req_meta, AFTensorServer* server) {
 }
 
 void StartFFNServer() {
-  // GPU Alloc, malloc should automatically gives page aligned.
-  PS_LOG(INFO) << "run server over gpu" << g_conf.gpu;
-  StartPS(0, Node::SERVER, -1, true);
+  PS_LOG(INFO) << "run server over gpu " << g_conf.gpu;
+  StartPS(0, Node::SERVER, g_conf.gpu, true);
   AFTensorServer* server = new AFTensorServer(g_conf.gpu);
   server->SetRequestHandle(SumHandler);
-  ps::Postoffice::GetServer()->Barrier(0, ps::kServerGroup + ps::kWorkerGroup);
+  ps::Postoffice::GetServer(g_conf.gpu)->Barrier(
+      0, ps::kServerGroup + ps::kWorkerGroup);
   RegisterExitCallback([server]() { delete server; });
   Finalize(0, Node::SERVER, true);
   PS_LOG(INFO) << "FFN server ends";

@@ -4,8 +4,8 @@
  * @file   network_utils.h
  * @brief  network utilities
  */
-#ifndef PS_NETWORK_UTILS_H_
-#define PS_NETWORK_UTILS_H_
+#ifndef NETWORK_UTILS_H_
+#define  NETWORK_UTILS_H_
 #include <unistd.h>
 #ifdef _MSC_VER
 #include <iphlpapi.h>
@@ -21,6 +21,7 @@
 #endif
 #include <string>
 #include <cstring>
+#include <cstdio>
 #include <utility>
 #include <array>
 #include <vector>
@@ -36,7 +37,7 @@
 
 namespace ps {
 
-#ifdef DMLC_USE_CUDA
+#ifdef DMLC_USE_RDMA
 class NetDev {
  public:
   NetDev(struct ibv_context *context,
@@ -113,7 +114,7 @@ static inline void GetIP(const std::string& interface, std::string* ip) {
   if (pAdapterInfo) {
     tstring keybase =
         _T(
-        "SYSTEM\\CurrentControlSet\\Control\\Network\\{4D36E972-E325-11CE-BFC1-08002BE10318}\\");
+        "SYSTEM\\CurrentControlSet\\Control\\Network\\{4D36E972-E325-11CE-BFC1-08002BE10318}\\");  // NOLINT
     tstring connection = _T("\\Connection");
 
     IP_ADAPTER_INFO* curpAdapterInfo = pAdapterInfo;
@@ -180,7 +181,8 @@ static inline void GetIP(const std::string& interface, std::string* ip) {
  *
  * only support IPv4
  */
-static inline void GetAvailableInterfaceAndIP(std::string* interface, std::string* ip) {
+static inline void GetAvailableInterfaceAndIP(
+    std::string* interface, std::string* ip) {
 #ifdef _MSC_VER
   typedef std::basic_string<TCHAR> tstring;
   IP_ADAPTER_INFO* pAdapterInfo = NULL;
@@ -203,7 +205,7 @@ static inline void GetAvailableInterfaceAndIP(std::string* interface, std::strin
   if (pAdapterInfo) {
     tstring keybase =
         _T(
-        "SYSTEM\\CurrentControlSet\\Control\\Network\\{4D36E972-E325-11CE-BFC1-08002BE10318}\\");
+        "SYSTEM\\CurrentControlSet\\Control\\Network\\{4D36E972-E325-11CE-BFC1-08002BE10318}\\");  // NOLINT
     tstring connection = _T("\\Connection");
 
     IP_ADAPTER_INFO* curpAdapterInfo = pAdapterInfo;
@@ -333,7 +335,8 @@ static inline int GetAvailablePort(int num_ports, std::array<int, 32>* ports) {
  * \brief return the IP address and Interface based on current GPU
  * \return 0 on failure or no cuda, 1 when getting the interface successfully
  */
-static inline int GetInterfaceAndIPByCurrentGpu(std::string* interface, std::string* ip) {
+static inline int GetInterfaceAndIPByCurrentGpu(
+    std::string* interface, std::string* ip) {
   interface->clear();
   ip->clear();
 
@@ -401,7 +404,8 @@ static inline int GetInterfaceAndIPByCurrentGpu(std::string* interface, std::str
   }
 
   if (nullptr != context && 0 != ibv_close_device(context)) {
-    PS_LOG(WARNING) << "failed to close device context, err=" << strerror(errno);
+    PS_LOG(WARNING) << "failed to close device context, err="
+                    << strerror(errno);
   }
 
   int maxPrefixLen = 0;
@@ -453,4 +457,4 @@ static inline int GetInterfaceAndIPByCurrentGpu(std::string* interface, std::str
 }
 
 }  // namespace ps
-#endif  // PS_NETWORK_UTILS_H_
+#endif  // NETWORK_UTILS_H_

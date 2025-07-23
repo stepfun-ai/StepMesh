@@ -1,8 +1,8 @@
 /**
  *  Copyright (C) by StepAI Contributors. 2025.
  */
-#ifndef PS_MULTI_QP_H_
-#define  PS_MULTI_QP_H_
+#ifndef PS_INTERNAL_MULTI_QP_H_
+#define  PS_INTERNAL_MULTI_QP_H_
 
 #include "ps/internal/utils.h"
 
@@ -13,4 +13,4 @@ static int QP_NUM = ps::GetEnv("STEPAF_QP_NUM", 2);  // Number of QPs
 
 #define FOR_QPS for (int qpIndex = 0; qpIndex < QP_NUM; qpIndex++)
 
-#endif  // PS_MULTI_QP_H_
+#endif  // PS_INTERNAL_MULTI_QP_H_

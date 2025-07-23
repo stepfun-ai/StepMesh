@@ -3,7 +3,7 @@
  *  Modifications Copyright (C) by StepAI Contributors. 2025.
  */
 #ifndef PS_INTERNAL_MESSAGE_H_
-#define PS_INTERNAL_MESSAGE_H_
+#define  PS_INTERNAL_MESSAGE_H_
 #include <array>
 #include <limits>
 #include <sstream>
@@ -19,8 +19,8 @@
 #endif  // STEPAF_USE_TORCH
 
 #include "ps/sarray.h"
-#include "trace.h"
-#include "ps/multi_qp.h"
+#include "ps/internal/multi_qp.h"
+#include "ps/internal/trace.h"
 #include "ps/internal/backend.h"
 
 namespace ps {
@@ -268,9 +268,8 @@ struct Meta {
         request(false),
         push(false),
         simple_app(false),
-        slave_qp_num(0)
-        {
-          FOR_QPS{
+        slave_qp_num(0) {
+          FOR_QPS {
             slave_qp_counter[qpIndex] = 0;
           }
         }
@@ -348,22 +347,22 @@ struct Meta {
   int option = 0;
   /** \brief the sequence id (used by ucx) */
   int sid = 0;
+  /** \brief whether is a tensor */
   int8_t is_tensor = 0;
+  /** \brief tensor data type */
   int8_t dtype = 0;
-  std::vector<int64_t> shape;
-#ifdef DMLC_USE_CUDA
+  /** \brief tensor shape */
+  std::vector<int64_t> shape = {};
+  /** \brief tensor event */
   TensorEvent* tensor_ev = nullptr;
-#endif
-#ifdef STEPAF_ENABLE_TRACE
   // timestamp traces for the request message
   struct Trace request_trace = {};
   // timestamp traces for the response message
   struct Trace response_trace = {};
-#endif
   /** \brief the slave qp counter for each endpoint */
   uint64_t slave_qp_counter[QP_MAX_NUM];
   /** \brief the number of slave qps */
-  int slave_qp_num; 
+  int slave_qp_num;
 };
 
 /**

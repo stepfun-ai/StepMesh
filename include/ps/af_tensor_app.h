@@ -4,6 +4,9 @@
 #ifndef PS_AF_TENSOR_APP_H_
 #define  PS_AF_TENSOR_APP_H_
 
+#include <ATen/ATen.h>
+#include <torch/torch.h>
+
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -16,10 +19,8 @@
 #include <tuple>
 #include <unordered_map>
 
-#include <ATen/ATen.h>
-#include <torch/torch.h>
-
 #include "ps/internal/backend.h"
+#include "ps/internal/utils.h"
 #include "ps/base.h"
 #include "ps/kv_app.h"
 
@@ -47,7 +48,6 @@ struct AFTensorRequest {
   std::vector<int> push_timestamps;
   std::vector<int> pull_timestamps;
   TensorEvent* event = nullptr;
-  int64_t start = 0;
 };
 
 /**
@@ -63,10 +63,11 @@ class AFTensorWorker {
   explicit AFTensorWorker(int instance_idx = 0)
       : kv_(0, 0, instance_idx), instance_id_(instance_idx),
         pushpull_stop_(false) {
-    gpu_ = 0;
+    gpu_ = -1;
     Environment::Get()->find("STEPAF_GPU", &gpu_, gpu_);
+    PS_CHECK_GE(gpu_, 0) << "STEPAF_GPU is not set";
     Backend::Get()->SetDevice(gpu_);
-    for (int i = 0; i < 16; i ++) {
+    for (int i = 0; i < kDefaultEventBufferSize; i ++) {
       events_.push_back(new TensorEvent());
     }
 
@@ -81,30 +82,6 @@ class AFTensorWorker {
     if (pushpull_thread_.joinable()) {
       pushpull_thread_.join();
     }
-  };
-
-  /**
-   * Pushes a tensor to the FFN server.
-   *
-   * @param key The key associated with the tensor to be pushed.
-   * @param tensor The tensor to be pushed to the store.
-   * @return An integer indicating the timestamp handler used by Wait
-   */
-  int ZPush(Key key, const at::Tensor& tensor) {
-    PS_CHECK(false) << "AFTensorWorker does not support zpush now";
-    return -1;
-  }
-
-  /**
-   * \brief Pulls a tensor from the key-value store identified by a specific key.
-   *
-   * @param key The key associated with the tensor to be pulled.
-   * @param tensor The tensor where the pulled data will be stored.
-   * @return An integer indicating the result of the operation.
-   */
-  int ZPull(Key key, at::Tensor& tensor) {
-    PS_CHECK(false) << "AFTensorWorker does not support zpull now";
-    return -1;
   }
 
   /**
@@ -120,13 +97,13 @@ class AFTensorWorker {
   int ZBatchPushPull(KeyTensorBatch& push_tensors,
                      KeyTensorBatch& pull_tensors) {
     Backend::Get()->SetDevice(gpu_);
-    auto server_ranges = Postoffice::GetWorker(instance_id_)->GetServerKeyRanges();
+    auto server_ranges =
+        Postoffice::GetWorker(instance_id_)->GetServerKeyRanges();
     int server_count = server_ranges.size();
     PS_CHECK_GT(server_count, 0) << "zero servers and cannot pushpull";
 
     std::unique_lock<std::mutex> lock(mu_);
     auto req = AFTensorRequest();
-    req.start = GetNanosecond();
     std::vector<int> timestamps;
     bool first = true;
     int start_ts = 0;
@@ -152,8 +129,8 @@ class AFTensorWorker {
       req.pull_timestamps.push_back(ts);
     }
 
-    req.push = std::move(push_tensors);
-    req.pull = std::move(pull_tensors);
+    req.push = push_tensors;
+    req.pull = pull_tensors;
     req.event = GetEvent();
     req.event->Record();
 
@@ -197,15 +174,16 @@ class AFTensorWorker {
     return handlers;
   }
 
-#ifdef STEPAF_ENABLE_TRACE
   /**
    * \brief Get performance trace for an operation
    * @param timestamp return by push, pull or pushpull operations
    */
   std::pair<struct Trace, struct Trace> FetchTrace(int timestamp) {
+#ifdef STEPAF_ENABLE_TRACE
     return kv_.FetchTrace(timestamp);
-  }
 #endif  // STEPAF_ENABLE_TRACE
+    return std::make_pair(Trace(), Trace());
+  }
 
  private:
   TensorEvent* GetEvent() {
@@ -222,8 +200,8 @@ class AFTensorWorker {
   }
 
   void PushPullWorker() {
+    BindCpuCore(5, 1);
     Backend::Get()->SetDevice(gpu_);
-    PS_LOG(WARNING) << "Start PushPullWorker " << gpu_;
     while (!pushpull_stop_.load()) {
       AFTensorRequest req;
       pushpull_queue_.WaitAndPop(&req);
@@ -232,9 +210,11 @@ class AFTensorWorker {
         break;
       }
 
-      req.event->Sync();
-      req.event->Release();
-      req.event = nullptr;
+      if (req.event != nullptr) {
+        req.event->Sync();
+        req.event->Release();
+        req.event = nullptr;
+      }
       ZBatchPushPull_(req.push,
                       req.push_timestamps,
                       req.pull,
@@ -258,7 +238,6 @@ class AFTensorWorker {
     msg.meta.head = cmd;
     msg.meta.push = true;
     msg.meta.timestamp = ts;
-
     msg.meta.addr = reinterpret_cast<uint64_t>(tensor.data_ptr());
     msg.meta.val_len = tensor.numel() * tensor.itemsize();
     msg.meta.key = keys[0];
@@ -281,9 +260,8 @@ class AFTensorWorker {
     }
   }
 
-  void ZPull_(int ts, const SArray<Key>& keys, KeyTensorBatch& pull_tensors, int index,
-             int cmd = 0) {
-
+  void ZPull_(int ts, const SArray<Key>& keys,
+              KeyTensorBatch& pull_tensors, int index, int cmd = 0) {
     auto server_ranges = Postoffice::GetWorker(
                              instance_id_)->GetServerKeyRanges();
     int server_count = server_ranges.size();
@@ -308,7 +286,6 @@ class AFTensorWorker {
       msg.meta.val_len = tensor.numel() * tensor.itemsize();
       msg.meta.key = key[0];
       msg.meta.is_tensor = 1;
-
       msg.meta.dtype = static_cast<int>(tensor.scalar_type());
       msg.meta.shape.clear();
       for (int64_t s = 0; s < tensor.dim(); s++) {
@@ -332,7 +309,8 @@ class AFTensorWorker {
                       KeyTensorBatch& pull_tensors,
                       std::vector<int>& pull_timestamps) {
     Backend::Get()->SetDevice(gpu_);
-    auto server_ranges = Postoffice::GetWorker(instance_id_)->GetServerKeyRanges();
+    auto server_ranges =
+        Postoffice::GetWorker(instance_id_)->GetServerKeyRanges();
     int server_count = server_ranges.size();
     PS_CHECK_GT(server_count, 0) << "zero servers and cannot pushpull";
 
@@ -373,14 +351,19 @@ class AFTensorWorker {
     }
   }
 
+  /** \brief key-value works */
   KVWorker<char> kv_;
+  /** \brief API mutex */
   mutable std::mutex mu_;
-
+  /** \brief record timestamps for each batch */
   std::unordered_map<int, std::vector<int>> batch_timestamps_;
+  /** \brief mutex for record timestamps */
   std::mutex timestamp_mu_;
-  std::vector<std::pair<int, Key*>> key_cache_;
+  /** \brief tensor events */
   std::vector<TensorEvent*> events_;
+  /** \brief gpu id */
   int gpu_;
+  /** \brief instance id in one group */
   int instance_id_;
   /** \brief queue for transmitting data from user thread to response thread */
   ThreadsafeQueue<AFTensorRequest> pushpull_queue_;
@@ -394,6 +377,8 @@ class AFTensorWorker {
 struct AFTensorMeta {
   /** \brief sender's node id */
   int sender = 0;
+  /** \brief sender's node rank */
+  int sender_rank = 0;
   /** \brief whether is a single request */
   bool single = false;
   int last_timestamp = 0;
@@ -431,6 +416,7 @@ struct AFTensorResponse {
   KVPairs<char> kv_pair = {};
   /** \brief event to synchronize */
   TensorEvent* event = nullptr;
+  uint64_t rsp_start;
 };
 
 /**
@@ -523,6 +509,7 @@ class AFTensorServer {
             } else {
               rsp.event = nullptr;
             }
+            rsp.rsp_start = GetNanosecond();
             response_queue_.Push(std::move(rsp));
             found = true;
             break;
@@ -608,8 +595,9 @@ class AFTensorServer {
   }
 
   void ResponseWorker() {
+    BindCpuCore(6, 2);
     Backend::Get()->SetDevice(gpu_);
-    PS_LOG(INFO) << "start response worker " << gpu_;
+    PS_LOG(INFO) << "Start ResponseWorker " << gpu_;
     while (!response_stop_.load()) {
       AFTensorResponse rsp;
       rsp.event = nullptr;
@@ -618,10 +606,14 @@ class AFTensorServer {
       if (response_stop_.load()) {
         break;
       }
-
-      kv_.Response(rsp.kv_meta, rsp.kv_pair, rsp.event);
+      if (rsp.event != nullptr) {
+        rsp.event->Sync();
+        rsp.event->Release();
+        rsp.event = nullptr;
+      }
+      kv_.Response(rsp.kv_meta, rsp.kv_pair, nullptr);
     }
-    PS_LOG(INFO) << "stop response worker";
+    PS_LOG(INFO) << "Stop ResponseWorker";
   }
 
   void KVHandler(const KVMeta &req_meta, const KVPairs<char> &req_data) {
@@ -642,6 +634,8 @@ class AFTensorServer {
       if (req_meta.cmd == AF_FLAG_BATCH_START) {
         af_meta = new AFTensorMeta;
         af_meta->sender = req_meta.sender;
+        af_meta->sender_rank =
+            Postoffice::GetServer(gpu_)->InstanceIDtoGroupRank(af_meta->sender);
         af_meta->single = false;
         if (batch_data_.find(req_meta.sender) != batch_data_.end()
             && batch_data_[req_meta.sender] != nullptr) {

@@ -2,6 +2,9 @@
  *  Copyright (C) by StepAI Contributors. 2025.
  */
 
+#include <string>
+#include <unordered_map>
+
 #include "ps/internal/backend.h"
 
 namespace ps {

@@ -11,12 +11,12 @@
 int ServerCount = ps::GetEnv("DMLC_NUM_SERVER", 1);
 
 void StartWorkers() {
-  // GPU Alloc, malloc should automatically gives page aligned.
-  CUDA_CALL(cudaSetDevice(g_conf.gpu));
   PS_LOG(INFO) << "run worker over gpu" << g_conf.gpu;
-  StartPS(0, Node::WORKER, -1, true);
-  AFTensorWorker af_worker = AFTensorWorker(0);
-  ps::Postoffice::GetWorker()->Barrier(0, ps::kServerGroup + ps::kWorkerGroup);
+  StartPS(0, Node::WORKER, g_conf.gpu, true);
+  Backend::Get()->SetDevice(g_conf.gpu);
+  AFTensorWorker af_worker = AFTensorWorker(g_conf.gpu);
+  ps::Postoffice::GetWorker(g_conf.gpu)->Barrier(
+      0, ps::kServerGroup + ps::kWorkerGroup);
 
   std::vector<at::Tensor> tensors;
   for (int b = 1; b < g_worker_conf.batch_max; b++) {
@@ -40,11 +40,16 @@ void StartWorkers() {
       });
     }
     for (int i = 0; i < 32; i++) {
+      for (int j = 0; j < ServerCount; j++) {
+        pull_batch[j].val.zero_();
+      }
+
       af_worker.Wait(af_worker.ZBatchPushPull(push_batch, pull_batch));
       auto sum = CreateTensor({b, 7168}, at::kBFloat16, g_conf.gpu);
       for (auto t : push_batch) {
         sum += t.val;
       }
+
 
       bool fail_flag = false;
       for (int j = 0; j < ServerCount; j++) {
@@ -57,9 +62,14 @@ void StartWorkers() {
       if (fail_flag) failed_count += 1;
     }
     auto end = std::chrono::high_resolution_clock::now();
-    std::cout << "Batch " << b << ": " << (failed_count == 0 ? "PASS" : "FAILED")
-              << " " <<  failed_count << "/" << 32
-              << " duration=" << (end - start).count() << "ns" << std::endl;
+    if (failed_count == 0) {
+      std::cout << "GPU " << g_conf.gpu << " Batch " << b << ": ALL PASS"
+                << " duration=" << (end - start).count() << "ns" << std::endl;
+    } else {
+      std::cout << "GPU " << g_conf.gpu << " Batch " << b << " FAILED "
+                << failed_count << "/" << 32
+                << " duration=" << (end - start).count() << "ns" << std::endl;
+    }
   }
 
   // stop worker

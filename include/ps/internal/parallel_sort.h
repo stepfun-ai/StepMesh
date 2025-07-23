@@ -11,6 +11,7 @@
 #include "ps/sarray.h"
 namespace ps {
 
+// NOLINT
 namespace  {
 /**
  * \brief the thread function
@@ -50,7 +51,7 @@ void ParallelSort(SArray<T>* arr,
                   const Fn& cmp = std::less<T>()) {
   PS_CHECK_GT(num_threads, 0);
   PS_CHECK(cmp);
-  size_t grainsize = std::max(arr->size() / num_threads + 5, (size_t)1024*16);
+  size_t grainsize = std::max(arr->size() / num_threads + 5, 1024*16);
   ParallelSort(arr->data(), arr->size(), grainsize, cmp);
 }
 

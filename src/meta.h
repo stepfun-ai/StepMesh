@@ -3,8 +3,8 @@
  *  Author: zhuyibo@bytedance.com (Yibo Zhu)
  *  Modifications Copyright (C) by StepAI Contributors. 2025.
  */
-#ifndef PS_LITE_META_H_
-#define  PS_LITE_META_H_
+#ifndef META_H_
+#define  META_H_
 
 #include <stdint.h>
 
@@ -100,12 +100,12 @@ struct RawMeta {
   int dim;
   // tensor shape
   int64_t shape[8];
-#ifdef STEPAF_ENABLE_TRACE
+// #ifdef STEPAF_ENABLE_TRACE
   // timestamp traces for the request message
   struct Trace request_trace;
   // timestamp traces for the response message
   struct Trace response_trace;
-#endif
+// #endif
   // counter fro each qp
   uint64_t slave_qp_counter[QP_MAX_NUM];
   // the number of slave qp
@@ -117,4 +117,4 @@ struct RawMeta {
 
 }  // namespace ps
 
-#endif  // PS_LITE_META_H_
+#endif  // META_H_

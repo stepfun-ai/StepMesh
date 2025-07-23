@@ -3,15 +3,16 @@
  *  Modifications Copyright (C) by StepAI Contributors. 2025.
  */
 #ifndef PS_INTERNAL_THREADSAFE_QUEUE_H_
-#define PS_INTERNAL_THREADSAFE_QUEUE_H_
+#define  PS_INTERNAL_THREADSAFE_QUEUE_H_
 #include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <queue>
+#include <utility>
 
-#include "env.h"
+#include "ps/internal/env.h"
+#include "ps/internal/spsc_queue.h"
 #include "ps/base.h"
-#include "spsc_queue.h"
 
 namespace ps {
 
@@ -67,7 +68,6 @@ class ThreadsafeQueue {
    */
   int Size() {
     if (lockless_) {
-      // return SizeLockless();
       return SizeAtomic();
     }
     std::unique_lock<std::mutex> lk(mu_);
@@ -119,23 +119,27 @@ class ThreadsafeQueue {
     // acquire: ensures writes preceding this load in other threads are
     // visible. Specifically, ensures the producer's writes to 'tail_' are
     // visible.
+    int max_count = 1000;
+    int count = 0;
     while (current_head == tail_.load(std::memory_order_acquire)) {
       // Queue is empty, spin and yield
-      // std::this_thread::yield();
-      continue;
+      count++;
+      if (count > max_count) {
+        count = 0;
+        _mm_pause();
+      }
     }
 
     *value = std::move(buffer_[current_head]);
     // release: ensures writes preceding this store in this thread are visible
     // to other threads that perform an acquire load on 'head_'.
     head_.store((current_head + 1) % capacity_, std::memory_order_release);
-    return;
   }
 
   int SizeAtomic() {
     // Use acquire-release for consistent view, though still approximate
-    long current_tail = tail_.load(std::memory_order_acquire);
-    long current_head = head_.load(std::memory_order_acquire);
+    auto current_tail = tail_.load(std::memory_order_acquire);
+    auto current_head = head_.load(std::memory_order_acquire);
     if (current_tail >= current_head) {
       return static_cast<int>(current_tail - current_head);
     } else {

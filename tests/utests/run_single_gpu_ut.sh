@@ -22,34 +22,26 @@ export DMLC_NUM_SERVER=1
 export DMLC_INTERFACE=brainpf_bond0        # my RDMA interface
 export DMLC_PS_ROOT_URI=$(ip -o -4 addr | grep ${DMLC_INTERFACE} | awk '{print $4}' | cut -d'/' -f1)
 export DMLC_PS_ROOT_PORT=${DMLC_PS_ROOT_PORT:-12278} # scheduler's port (can random choose)
-export DMLC_SPLIT_QP_LAG=0
-# export PS_VERBOSE=3
-export DMLC_ENABLE_RDMA=ibverbs
+export DMLC_SPLIT_QP_LAG=1
 
+export DMLC_ENABLE_RDMA=ibverbs
 
 echo "SCHEDULER_IP is ${DMLC_PS_ROOT_URI}"
 
 # # launch scheduler
 export DMLC_NODE_HOST=${DMLC_PS_ROOT_URI}
-# if [ "$cmd" == "sc" ]; then
-cleanup # cleanup on startup
+
+cleanup
 DMLC_ROLE=scheduler $SCHEDULER_BIN &
-# fi
 
-
-# if [ "$cmd" == "se0" ]; then
 export STEPAF_GPU=0
-# DMLC_ROLE=server gdb --ex "run" --args $SERVER_BIN
 DMLC_ROLE=server $SERVER_BIN &
-# fi 
 
+sleep 1
 
-export STEPAF_GPU=1
+export STEPAF_GPU=0
 export DMLC_INTERFACE=auto
 
-# if [ "$cmd" == "w" ]; then
-# DMLC_ROLE=worker gdb --ex "run" --args  $WORKER_BIN
 DMLC_ROLE=worker $WORKER_BIN
 
-# fi
 wait

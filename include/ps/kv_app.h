@@ -4,11 +4,10 @@
  *  Modifications Copyright (C) by StepAI Contributors. 2025.
  */
 #ifndef PS_KV_APP_H_
-#define PS_KV_APP_H_
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
+#define  PS_KV_APP_H_
+#include <cstdio>
+#include <cstdlib>
+#include <string>
 #include <algorithm>
 #include <fstream>
 #include <iostream>
@@ -93,12 +92,12 @@ class KVWorker : public SimpleApp {
       : SimpleApp() {
     postoffice_ = Postoffice::GetWorker(instance_idx);
     PS_VLOG(3) << "KVWorker " << instance_idx << " po@"
-               << (long long)postoffice_;
+               << reinterpret_cast<uint64_t>(postoffice_);
     instance_idx_ = instance_idx;
     int group_size = postoffice_->group_size();
     PS_CHECK(group_size > instance_idx);
 
-    using namespace std::placeholders;
+    using std::placeholders::_1, std::placeholders::_2, std::placeholders::_3;
     slicer_ = std::bind(&KVWorker<Val>::DefaultSlicer, this, _1, _2, _3);
     obj_ =
         new Customer(app_id, customer_id,
@@ -369,12 +368,10 @@ struct KVMeta {
   /** \brief tensor shape */
   std::vector<int64_t> shape;
 
-#ifdef STEPAF_ENABLE_TRACE
   /** \brief request trace */
   struct Trace request_trace;
   /** \brief response trace */
   struct Trace response_trace;
-#endif
 };
 
 /**
@@ -393,7 +390,7 @@ class KVServer : public SimpleApp {
                                : Postoffice::GetServer(instance_idx);
     PS_CHECK(postoffice_) << is_scheduler << " " << instance_idx;
     instance_idx_ = instance_idx;
-    using namespace std::placeholders;
+    using std::placeholders::_1;
     this->obj_ = new Customer(
         app_id, app_id, std::bind(&KVServer::Process, this, _1), postoffice_);
   }
@@ -427,7 +424,9 @@ class KVServer : public SimpleApp {
    * \param req the meta-info of the request
    * \param res the kv pairs that will send back to the worker
    */
-  void Response(const KVMeta& req, const KVPairs<Val>& res = KVPairs<Val>(), TensorEvent* event = nullptr);
+  void Response(const KVMeta& req,
+                const KVPairs<Val>& res = KVPairs<Val>(),
+                    TensorEvent* event = nullptr);
 
   /**
    * specify the recver's buffer for target keys
@@ -587,7 +586,9 @@ void KVServer<Val>::Process(const Message& msg) {
 }
 
 template <typename Val>
-void KVServer<Val>::Response(const KVMeta& req, const KVPairs<Val>& res, TensorEvent* event) {
+void KVServer<Val>::Response(const KVMeta& req,
+                             const KVPairs<Val>& res,
+                             TensorEvent* event) {
   // server instance group support
   int group_worker_id = req.sender;
   int group_worker_rank = postoffice_->IDtoRank(group_worker_id);
@@ -609,9 +610,7 @@ void KVServer<Val>::Response(const KVMeta& req, const KVPairs<Val>& res, TensorE
 #ifdef DMLC_USE_CUDA
   if (event != nullptr) {
     msg.meta.tensor_ev = event;
-    // msg.meta.tensor_ev->record();
   }
-
 #endif
 #ifdef STEPAF_ENABLE_TRACE
   memcpy(&msg.meta.request_trace,
@@ -696,12 +695,12 @@ void KVWorker<Val>::Send(int timestamp, bool push, int cmd, KVPairs<Val>& kvs) {
   slicer_(kvs, Postoffice::GetWorker()->GetServerKeyRanges(), &sliced);
 
   // need to add response first, since it will not always trigger the callback
-  int skipped = 0;
+  size_t skipped = 0;
   for (size_t i = 0; i < sliced.size(); ++i) {
     if (!sliced[i].first) ++skipped;
   }
   obj_->AddResponse(timestamp, skipped);
-  if ((size_t)skipped == sliced.size()) {
+  if (skipped == sliced.size()) {
     RunCallback(timestamp);
   }
   DeviceType src_dev_type, dst_dev_type;
@@ -762,11 +761,11 @@ void KVWorker<Val>::Process(const Message& msg) {
   // store the data for pulling
   int ts = msg.meta.timestamp;
   if (!msg.meta.push && msg.data.size()) {
-    PS_CHECK_GE(msg.data.size(), (size_t)2);
+    PS_CHECK_GE(msg.data.size(), 2);
     KVPairs<Val> kvs;
     kvs.keys = msg.data[0];
     kvs.vals = msg.data[1];
-    if (msg.data.size() > (size_t)2) {
+    if (msg.data.size() > 2) {
       kvs.lens = msg.data[2];
     }
     mu_.lock();

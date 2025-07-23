@@ -4,15 +4,15 @@
 #ifndef PS_INTERNAL_BACKEND_H_
 #define  PS_INTERNAL_BACKEND_H_
 
-#include <memory>
-#include <string>
-#include <utility>
-#include <unordered_map>
-
 #include <ATen/ATen.h>
 #include <torch/torch.h>
 #include <ATen/cuda/CUDAContext.h>
 #include <ATen/cuda/CUDAEvent.h>
+
+#include <memory>
+#include <string>
+#include <utility>
+#include <unordered_map>
 
 #include "ps/internal/env.h"
 #include "dmlc/logging.h"
@@ -132,4 +132,4 @@ class Backend {
 
 }  // namespace ps
 
-#endif  // PS_BACKEND_BACKEND_H_
+#endif  // PS_INTERNAL_BACKEND_H_
