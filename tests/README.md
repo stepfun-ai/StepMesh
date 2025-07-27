@@ -42,6 +42,7 @@ These scripts should run in the root directory of the project. Uint tests are de
 ### A. Single GPU Example
 
 ``` bash
+export STEPMESH_BIND_CPU_CORE=0
 bash tests/utest/run_single_gpu_ut.sh
 ```
 
@@ -102,6 +103,7 @@ GPU 0 Batch 4: ALL PASS duration=30030704ns
 ### B. Multi-GPU Example
 
 ```bash
+export STEPMESH_BIND_CPU_CORE=0
 bash tests/utests/run_multi_gpu_ut.sh
 ```
 
@@ -126,15 +128,16 @@ GPU 0 Batch 3: ALL PASS duration=171963753ns
 
 | Function  | ENV |
 | --- | --- |
-| `echo` | BIN=./cmake_build/tests/stepmesh_echo_test |
-| `pull` | BIN=./cmake_build/tests/stepmesh_pull_test |
-| `push` | BIN=./cmake_build/tests/stepmesh_push_test |
-| `register` | BIN=./cmake_build/tests/stepmesh_register_test |
+| `echo` | BIN=./cmake_build/tests/utests/stepmesh_echo_test |
+| `pull` | BIN=./cmake_build/tests/utests/stepmesh_pull_test |
+| `push` | BIN=./cmake_build/tests/utests/stepmesh_push_test |
+| `register` | BIN=./cmake_build/tests/utests/stepmesh_register_test |
 
 This examples can be run with the unit tests scripts with only additional environment variables set. For example the following commqnd can run the single GPU test or 8 GPUs test for stepmesh_echo. Note that don't run this test with STEPMESH_BIND_CPU_CORE=1.
 
 ```bash
-BIN=./cmake_build/tests/stepmesh_push_test SCHEDULER_BIN=$BIN SERVER_BIN=$BIN WORKER_BIN=$BIN bash tests/utests/run_single_gpu_ut.sh
+export STEPMESH_BIND_CPU_CORE=0
+BIN=./cmake_build/tests/utests/stepmesh_echo_test SCHEDULER_BIN=$BIN SERVER_BIN=$BIN WORKER_BIN=$BIN bash tests/utests/run_single_gpu_ut.sh
 ```
 
 
@@ -149,7 +152,7 @@ ROLE=server BIN=../benchmark/bmk_comm_latency_multiserver bash tests/fserver/run
 ```
 
 ```bash
-ROLE=worker BIN=../benchmark/bmk_comm_latency_multiserver bash tests/fserver/run_multi_gpu.sh ${scheduler ip}
+ROLE=worker BIN=../benchmark/bmk_comm_latency_multiserver bash tests/fserver/run_multi_gpu.sh ${scheduler_ip}
 ```
 
 Note that the output is all zero. It is required to build the library with the following edits and rebuild to show the real latency.
@@ -212,6 +215,7 @@ comm bmk gpu=6: mean=0.000ms, p50=0.000ms, p99=0.000ms, max=0.000ms
                 net_cost        0.000   0.000   0.000   0.000 0.000 0.000
 ```
 
+The following ouput is 
 
 ```
 comm bmk gpu=7: mean=0.082ms, p50=0.081ms, p99=0.090ms, max=0.396ms
@@ -226,8 +230,18 @@ comm bmk gpu=7: mean=0.082ms, p50=0.081ms, p99=0.090ms, max=0.396ms
                 net_cost        0.028   0.028   0.029   0.033 0.031 0.030
 ```                
 
-### M Server , N Worker [Repairment required]
+### M Server , N Worker 
 
+ Core bind is recommonded for stable performance, the environment variable for a two numa server with 48 cores each numa can be set as follows:
+
+```bash
+export STEPMESH_BIND_CPU_CORE=1
+export STEPMESH_CPU_CORES_PER_SOCKET=48
+export STEPMESH_CPU_CORES_PER_GPU=5
+export STEPMESH_CPU_START_OFFSET=10
+```
+
+The following commands is an example for 2 server and 2 worker test.
 
 ```bash
 ROLE=server NUM_SERVER=2 NUM_WORKER=2 NODE_RANK=0 BIN=../benchmark/bmk_comm_latency_multiserver bash tests/fserver/run_multi_gpu.sh
@@ -235,14 +249,14 @@ ROLE=server NUM_SERVER=2 NUM_WORKER=2 NODE_RANK=0 BIN=../benchmark/bmk_comm_late
 ```
 
 ```bash
-ROLE=server-slave NUM_SERVER=2 NUM_WORKER=2 NODE_RANK=1 BIN=../benchmark/bmk_comm_latency_multiserver bash tests/fserver/run_multi_gpu.sh ${scheduler ip}
+ROLE=server-slave NUM_SERVER=2 NUM_WORKER=2 NODE_RANK=1 BIN=../benchmark/bmk_comm_latency_multiserver bash tests/fserver/run_multi_gpu.sh ${scheduler_ip}
 ```
 
 
 ```bash
-ROLE=worker NUM_SERVER=2 NUM_WORKER=2 NODE_RANK=0 BIN=../benchmark/bmk_comm_latency_multiserver bash tests/fserver/run_multi_gpu.sh ${scheduler ip}
+ROLE=worker NUM_SERVER=2 NUM_WORKER=2 NODE_RANK=0 BIN=../benchmark/bmk_comm_latency_multiserver bash tests/fserver/run_multi_gpu.sh ${scheduler_ip}
 ```
 
 ```bash
-ROLE=worker NUM_SERVER=2 NUM_WORKER=2 NODE_RANK=1 BIN=../benchmark/bmk_comm_latency_multiserver bash tests/fserver/run_multi_gpu.sh ${scheduler ip}
+ROLE=worker NUM_SERVER=2 NUM_WORKER=2 NODE_RANK=1 BIN=../benchmark/bmk_comm_latency_multiserver bash tests/fserver/run_multi_gpu.sh ${scheduler_ip}
 ```
