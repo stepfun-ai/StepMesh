@@ -114,7 +114,7 @@ class Backend {
     if (backend_impl == nullptr) {
       std::unique_lock<std::mutex> lock(backends_mutex_);
       std::string backend_type = "GPU";
-      backend_type = Environment::Get()->find("STEPAF_BACKEND", backend_type);
+      backend_type = Environment::Get()->find("STEPMESH_BAKCEND", backend_type);
       PS_CHECK_NE(backends_.find(backend_type), backends_.end())
           << "failed to get backend impl: " <<  backend_type;
       backend_impl = backends_[backend_type];

@@ -137,7 +137,7 @@ inline void StartPS(int customer_id, Node::Role role, int rank, bool do_barrier,
   Backend::Register("GPU", new GpuBackend());
   int group_size = 1;
 
-  BindCpuCore(0, 2);
+  BindCpuCore(0, 1);
 
   Environment::Get()->find("DMLC_GROUP_SIZE", &group_size, group_size);
   Postoffice::Init(role);
@@ -262,7 +262,7 @@ inline int GetGroupSize() {
 
 inline int GetGpuId() {
   int gpu = 0;
-  Environment::Get()->find("STEPAF_GPU", &gpu, gpu);
+  Environment::Get()->find("STEPMESH_GPU", &gpu, gpu);
   return gpu;
 }
 

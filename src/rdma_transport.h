@@ -222,7 +222,7 @@ struct Endpoint {
   }
 
   void SetQPLag(int local_id, int rem_id) {
-    auto qp_split_val = Environment::Get()->find("DMLC_SPLIT_QP_LAG");
+    auto qp_split_val = Environment::Get()->find("STEPMESH_SPLIT_QP_LAG");
     int val = qp_split_val ? atoi(qp_split_val) : -1;
 
     if (val == 1) {
@@ -312,14 +312,14 @@ class RDMATransport : public Transport {
 
     postoffice_ = postoffice;
     is_server_ = postoffice_->is_server();
-#ifdef STEPAF_USE_GDR
+#ifdef STEPMESH_USE_GDR
     if (is_server_) {
       // Get the current GPU device ID directly from the CUDA runtime.
       // This relies on the launcher (e.g., mpirun) setting
       // CUDA_VISIBLE_DEVICES correctly for process-to-GPU affinity.
       int gpu_id = -1;
-      Environment::Get()->find("STEPAF_GPU", &gpu_id, gpu_id);
-      PS_CHECK_GE(gpu_id, 0) << "failed to get gpu id, please set STEPAF_GPU";
+      Environment::Get()->find("STEPMESH_GPU", &gpu_id, gpu_id);
+      PS_CHECK_GE(gpu_id, 0) << "failed to get gpu id, please set STEPMESH_GPU";
       Backend::Get()->SetDevice(gpu_id);
       mem_allocator_ =
           new BackendMemoryAllocator(endpoint_->cm_ids[0]->pd, gpu_id);
@@ -328,7 +328,7 @@ class RDMATransport : public Transport {
     }
 #else
     mem_allocator_ = nullptr;
-#endif  // STEPAF_USE_GDR
+#endif  // STEPMESH_USE_GDR
   }
 
   ~RDMATransport() {
@@ -419,7 +419,7 @@ class RDMATransport : public Transport {
       data_len += req->data_len[i];
     }
 
-#ifdef STEPAF_USE_GDR
+#ifdef STEPMESH_USE_GDR
     if (is_server_) {
       // Server-side GDR: Allocate separate CPU meta buffer and GPU data buffer
       PS_VLOG(2) << "SendRendezvousReply (GDR Server): meta_len="
@@ -498,7 +498,7 @@ class RDMATransport : public Transport {
 
       return;  // Early return for server-side GDR path
     }
-#endif  // STEPAF_USE_GDR
+#endif  // STEPMESH_USE_GDR
 
     // Original logic for non-GDR or for client-side GDR (only receives meta)
     size_t buffer_size =
@@ -515,7 +515,7 @@ class RDMATransport : public Transport {
 
     // In GDR mode, client still uses single buffer logic,
     // so we populate the single addr/rkey
-#ifdef STEPAF_USE_GDR
+#ifdef STEPMESH_USE_GDR
     resp->meta_addr = reinterpret_cast<uint64_t>(buffer);
     resp->meta_rkey = allocator_->RemoteKey(buffer);
     resp->data_addr = 0;  // Not used by client
@@ -546,7 +546,7 @@ class RDMATransport : public Transport {
   }
 
   void Send(Message &msg, MessageBuffer *msg_buf, RemoteTuple remote_tuple) {
-#ifdef STEPAF_USE_GDR
+#ifdef STEPMESH_USE_GDR
     auto raddr = std::get<0>(remote_tuple);
     auto rkey = std::get<1>(remote_tuple);
     auto idx = std::get<4>(remote_tuple);
@@ -565,7 +565,7 @@ class RDMATransport : public Transport {
     PS_CHECK(msg.data.size() >= 2);
     PS_CHECK(msg.data[1].size() <= msg_buf->mrs[0].second);
 
-#ifdef STEPAF_USE_GDR
+#ifdef STEPMESH_USE_GDR
     auto meta_raddr = std::get<0>(remote_tuple);
     auto meta_rkey = std::get<1>(remote_tuple);
     auto data_raddr = std::get<2>(remote_tuple);
@@ -661,7 +661,7 @@ class RDMATransport : public Transport {
     data_sge.addr = reinterpret_cast<uint64_t>(msg_buf->data[1].data());
     data_sge.length = data_len;
     data_sge.lkey = lkey;
-#ifdef STEPAF_USE_GDR
+#ifdef STEPMESH_USE_GDR
     auto meta_raddr = std::get<0>(remote_tuple);
     auto meta_rkey = std::get<1>(remote_tuple);
     auto idx = std::get<4>(remote_tuple);
@@ -755,7 +755,7 @@ class RDMATransport : public Transport {
   virtual int RecvPushRequest(Message *msg, BufferContext *buffer_ctx,
                               int meta_len) {
     PS_CHECK(msg->meta.push && msg->meta.request);
-#ifdef STEPAF_USE_GDR
+#ifdef STEPMESH_USE_GDR
     if (is_server_) {
       PS_CHECK(buffer_ctx->data_num >= 2);
       // Data is in a separate GPU buffer
@@ -781,7 +781,7 @@ class RDMATransport : public Transport {
 
       return keys.size() + vals.size() + lens.size();
     }
-#endif  // STEPAF_USE_GDR
+#endif  // STEPMESH_USE_GDR
 
     // Original non-GDR or client-side logic
     PS_CHECK_EQ(buffer_ctx->data_num, 3);

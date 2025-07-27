@@ -685,26 +685,26 @@ void Van::Stop() {
 }
 
 int Van::Send(Message &msg) {
-#if STEPAF_ENABLE_TRACE
+#if STEPMESH_ENABLE_TRACE
   if (msg.meta.request) {
     msg.meta.request_trace.start = GetNanosecond();
   } else {
     msg.meta.response_trace.start = GetNanosecond();
   }
-#endif  // STEPAF_ENABLE_TRACE
+#endif  // STEPMESH_ENABLE_TRACE
   int send_bytes = SendMsg(msg);
   PS_CHECK_NE(send_bytes, -1) << this->GetType() << " sent -1 bytes";
   send_bytes_ += send_bytes;
   if (resender_) resender_->AddOutgoing(msg);
-#if STEPAF_ENABLE_TRACE
+#if STEPMESH_ENABLE_TRACE
   PS_VLOG(2) << this->GetType() << " " << my_node_.id
              << "\tsent: " << msg.DebugString();
-#endif  // STEPAF_ENABLE_TRACE
+#endif  // STEPMESH_ENABLE_TRACE
   return send_bytes;
 }
 
 void Van::Receiving() {
-  BindCpuCore(4, 1);
+  BindCpuCore(2, 1);
   Meta nodes;
   Meta recovery_nodes;  // store recovery nodes
   recovery_nodes.control.cmd = Control::ADD_NODE;
@@ -724,7 +724,7 @@ void Van::Receiving() {
     PS_CHECK_NE(recv_bytes, -1);
     recv_bytes_ += recv_bytes;
 
-#ifdef STEPAF_ENABLE_TRACE
+#ifdef STEPMESH_ENABLE_TRACE
     PS_LOG(TRACE) << this->GetType() << " " << my_node_.id
                << "\treceived: " << msg.DebugString();
 #endif
@@ -749,7 +749,7 @@ void Van::Receiving() {
         PS_LOG(WARNING) << "Drop unknown typed message " << msg.DebugString();
       }
     } else {
-#ifdef STEPAF_ENABLE_TRACE
+#ifdef STEPMESH_ENABLE_TRACE
       if (msg.meta.request) {
         msg.meta.request_trace.process = GetNanosecond();
       } else {
@@ -793,14 +793,14 @@ void Van::PackMeta(const Meta &meta, char **meta_buf, int *buf_size) {
   raw->request = meta.request;
   raw->simple_app = meta.simple_app;
   raw->customer_id = meta.customer_id;
-#ifdef STEPAF_ENABLE_TRACE
+#ifdef STEPMESH_ENABLE_TRACE
   memcpy(&raw->request_trace,
          &meta.request_trace,
          sizeof(meta.request_trace));
   memcpy(&raw->response_trace,
          &meta.response_trace,
          sizeof(meta.response_trace));
-#endif  // STEPAF_ENABLE_TRACE
+#endif  // STEPMESH_ENABLE_TRACE
   int data_type_count = 0;
   for (auto d : meta.data_type) {
     raw_data_type[data_type_count] = d;
@@ -903,7 +903,7 @@ void Van::UnpackMeta(const char *meta_buf, int buf_size, Meta *meta) {
   meta->control.barrier_group = ctrl->barrier_group;
   meta->control.msg_sig = ctrl->msg_sig;
 
-#ifdef STEPAF_ENABLE_TRACE
+#ifdef STEPMESH_ENABLE_TRACE
   meta->request_trace.pre_start = raw->request_trace.pre_start;
   meta->request_trace.start = raw->request_trace.start;
   meta->request_trace.postsend = raw->request_trace.postsend;
@@ -914,7 +914,7 @@ void Van::UnpackMeta(const char *meta_buf, int buf_size, Meta *meta) {
     meta->response_trace.start = raw->response_trace.start;
     meta->response_trace.postsend = raw->response_trace.postsend;
   }
-#endif  // STEPAF_ENABLE_TRACE
+#endif  // STEPMESH_ENABLE_TRACE
   for (int i = 0; i < ctrl->node_size; ++i) {
     const auto &p = raw_node[i];
     Node n;

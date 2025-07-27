@@ -11,7 +11,7 @@
 namespace ps {
 
 GpuBackend::GpuBackend() {
-  Environment::Get()->find("STEPAF_MEM_SYNC", &mem_sync_, mem_sync_);
+  Environment::Get()->find("STEPMESH_MEM_SYNC", &mem_sync_, mem_sync_);
 }
 
 int GpuBackend::SetDevice(int dev) {

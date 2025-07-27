@@ -59,9 +59,9 @@ void Customer::WaitRequest(int timestamp) {
       _mm_pause();
     }
   }
-#ifdef STEPAF_ENABLE_TRACE
+#ifdef STEPMESH_ENABLE_TRACE
   req->response.process = GetNanosecond();
-#endif  // STEPAF_ENABLE_TRACE
+#endif  // STEPMESH_ENABLE_TRACE
 }
 
 int Customer::NumResponse(int timestamp) {
@@ -86,10 +86,10 @@ void Customer::Receiving() {
     if (!recv.meta.request) {
       auto t = tracker_[recv.meta.timestamp];
       PS_CHECK_NE(t, nullptr) << "could not find tracker";
-#ifdef STEPAF_ENABLE_TRACE
+#ifdef STEPMESH_ENABLE_TRACE
       t->request = recv.meta.request_trace;
       t->response = recv.meta.response_trace;
-#endif  // STEPAF_ENABLE_TRACE
+#endif  // STEPMESH_ENABLE_TRACE
       t->response_count.fetch_add(1, std::memory_order_release);
     }
   }
@@ -105,20 +105,20 @@ void Customer::DirectProcess(Message& recv) {
   if (!recv.meta.request) {
     auto t = tracker_[recv.meta.timestamp];
     PS_CHECK_NE(t, nullptr) << "could not find tracker";
-#ifdef STEPAF_ENABLE_TRACE
+#ifdef STEPMESH_ENABLE_TRACE
     t->request = recv.meta.request_trace;
     t->response = recv.meta.response_trace;
-#endif  // STEPAF_ENABLE_TRACE
+#endif  // STEPMESH_ENABLE_TRACE
     t->response_count.fetch_add(1, std::memory_order_release);
   }
 }
 
 std::pair<struct Trace, struct Trace> Customer::FetchTrace(int timestamp) {
-#ifdef STEPAF_ENABLE_TRACE
+#ifdef STEPMESH_ENABLE_TRACE
   std::unique_lock<std::mutex> lk(tracker_mu_);
   auto p = tracker_[timestamp];
   return std::make_pair(p->request, p->response);
-#endif  // STEPAF_ENABLE_TRACE
+#endif  // STEPMESH_ENABLE_TRACE
   return std::make_pair(Trace(), Trace());
 }
 

@@ -263,11 +263,11 @@ class KVWorker : public SimpleApp {
     slicer_ = slicer;
   }
 
-#ifdef STEPAF_ENABLE_TRACE
+#ifdef STEPMESH_ENABLE_TRACE
   std::pair<struct Trace, struct Trace> FetchTrace(int timestamp) {
     return obj_->FetchTrace(timestamp);
   }
-#endif  // STEPAF_ENABLE_TRACE
+#endif  // STEPMESH_ENABLE_TRACE
 
   void SendMsg(Message& msg, int dst) {
     int group_server_rank = dst;
@@ -560,7 +560,7 @@ void KVServer<Val>::Process(const Message& msg) {
   meta.is_tensor = msg.meta.is_tensor;
   meta.dtype = msg.meta.dtype;
   meta.shape = msg.meta.shape;
-#ifdef STEPAF_ENABLE_TRACE
+#ifdef STEPMESH_ENABLE_TRACE
   memcpy(&meta.request_trace,
          &msg.meta.request_trace,
          sizeof(msg.meta.request_trace));
@@ -612,7 +612,7 @@ void KVServer<Val>::Response(const KVMeta& req,
     msg.meta.tensor_ev = event;
   }
 #endif
-#ifdef STEPAF_ENABLE_TRACE
+#ifdef STEPMESH_ENABLE_TRACE
   memcpy(&msg.meta.request_trace,
          &req.request_trace,
          sizeof(msg.meta.request_trace));

@@ -112,11 +112,14 @@ static uint64_t norm = CycleToNs();
   * \brief Get the current nanocount.
 */
 static inline uint64_t GetNanosecond() {
-  // return 0;
+#ifdef STEPMESH_ENABLE_TRACE
   if (norm == 0) {
     norm = CycleToNs();
   }
   return static_cast<uint64_t>((_GetCurrentCycle() << 5) / norm);
+#else
+  return 0;
+#endif
 }
 
 static int PS_VERBOSE = ps::GetEnv("PS_VERBOSE", 0);
@@ -128,7 +131,7 @@ static int PS_VERBOSE = ps::GetEnv("PS_VERBOSE", 0);
  */
 static inline void BindCpuCore(int offset, int core_count = 1) {
   int gpu = -1;
-  Environment::Get()->find("STEPAF_GPU", &gpu, gpu);
+  Environment::Get()->find("STEPMESH_GPU", &gpu, gpu);
   int bind_enable = 0;
   Environment::Get()->find("STEPMESH_BIND_CPU_CORE", &bind_enable, bind_enable);
 
@@ -136,11 +139,19 @@ static inline void BindCpuCore(int offset, int core_count = 1) {
     return;
   }
 
-  int cores_per_gpu = 8;
+  int cores_per_gpu = 5;
   int cpu_core = 0;
   int cores_per_socket = 48;
-  int start_offset = 4;
+  int start_offset = 10;
 
+  Environment::Get()->find("STEPMESH_CPU_CORES_PER_SOCKET", &cores_per_socket, cores_per_socket);
+  Environment::Get()->find("STEPMESH_CPU_CORES_PER_GPU", &cores_per_gpu, cores_per_gpu);
+  Environment::Get()->find("STEPMESH_CPU_START_OFFSET", &start_offset, start_offset);
+
+  if(offset >= cores_per_gpu){
+    offset = cores_per_gpu - 1;
+    std::cout << "Bind Core idx is larger than cores count for each GPU, reset idx as " << offset;
+  }
   int basic_core_id = gpu * cores_per_gpu + start_offset + offset;
   if (gpu < 2) {
     cpu_core = basic_core_id;

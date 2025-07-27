@@ -1,6 +1,6 @@
-/*************************************************************************
-* Copyright (c) 2024, STEP AI. All rights reserved.
-************************************************************************/
+/**
+ *  Copyright (C) 2025 by StepAI Contributors.
+ */
 #ifndef PS_TEST_COMMON_H_
 #define PS_TEST_COMMON_H_
 
@@ -10,26 +10,13 @@
 #include <vector>
 #include <string>
 #include <climits>
-#ifdef STEPAF_USE_TORCH
+
 #include <ATen/ATen.h>
 #include <torch/torch.h>
 #include <ATen/cuda/CUDAContext.h>
 #include <ATen/cuda/CUDAEvent.h>
 
 #include "ps/af_tensor_app.h"
-
-#endif  // STEPAF_USE_TORCH
-
-#if DMLC_USE_CUDA
-#include <cuda_runtime.h>
-#define CUDA_CALL(func)                                      \
-  {                                                          \
-    cudaError_t e = (func);                                  \
-    PS_CHECK(e == cudaSuccess || e == cudaErrorCudartUnloading) \
-        << "CUDA: " << cudaGetErrorString(e);                \
-  }
-#endif
-
 
 #include "ps/ps.h"
 
@@ -38,13 +25,8 @@ using namespace ps;
 static struct {
   int warmup_iter = 10;
   int iter = INT_MAX;
-  int batch_start = 64;
-  int batch_end = 64;
-  int batch_step = 64;
-  int base_size = 7168;
+  int size = 7168;
   int debug = false;
-  int worker_num = 1;
-  int worker_rank = -0;
   int gpu_num = 1;
   int gpu = 0;
   int mb_num = 3;
@@ -58,15 +40,11 @@ static struct {
 #define ROUNDUP(x, y) (DIVUP((x), (y))*(y))
 
 void InitConfig() {
-  Environment::Get()->find("BENCHMARK_WARMUP", &g_conf.warmup_iter, g_conf.warmup_iter);
+  Environment::Get()->find("BENCHMARK_WARMUP",
+                           &g_conf.warmup_iter, g_conf.warmup_iter);
   Environment::Get()->find("BENCHMARK_ITER", &g_conf.iter, g_conf.iter);
-  Environment::Get()->find("BENCHMARK_BATCH_START", &g_conf.batch_start, g_conf.batch_start);
-  Environment::Get()->find("BENCHMARK_BATCH_END", &g_conf.batch_end, g_conf.batch_end);
-  Environment::Get()->find("BENCHMARK_BATCH_STEP", &g_conf.batch_step, g_conf.batch_step);
-  Environment::Get()->find("BENCHMARK_WORKER_NUMBER", &g_conf.worker_num, g_conf.worker_num);
-  Environment::Get()->find("BENCHMARK_WORKER_RANK", &g_conf.worker_rank, g_conf.worker_rank);
-
-  Environment::Get()->find("STEPAF_GPU", &g_conf.gpu, g_conf.gpu);
+  Environment::Get()->find("BENCHMARK_SIZE", &g_conf.size, g_conf.size);
+  Environment::Get()->find("STEPMESH_GPU", &g_conf.gpu, g_conf.gpu);
 
   g_conf.gpu = GetGpuId();
   g_conf.group_size = GetGroupSize();
@@ -86,49 +64,6 @@ static inline void AlignedMalloc(void** ptr, size_t size) {
   PS_CHECK(p);
   memset(p, 1, size);
   *ptr = p;
-}
-
-static inline void StartScheduler() {
-  PS_LOG(INFO) << "Scheduler starts";
-  StartPS(0, Node::SCHEDULER, -1, true);
-  Finalize(0, Node::SCHEDULER, true);
-  PS_LOG(INFO) << "Scheduler ends";
-}
-
-#ifdef STEPAF_USE_TORCH
-static inline void InitTensors(std::vector<at::Tensor>& server_vals,
-                               int num_keys,
-                               std::vector<int64_t> shape,
-                               at::ScalarType dtype,
-                               int gpu,
-                               bool random = false) {
-  for (int key = 0; key < num_keys; key++) {
-    auto options = torch::TensorOptions()
-                       .dtype(dtype)
-                       .memory_format(at::MemoryFormat::Contiguous)
-                       .device(at::Device(at::kCUDA, gpu));
-    if (random) {
-      server_vals.push_back(torch::rand(shape, options));
-    } else {
-      server_vals.push_back(torch::ones(shape, options));
-    }
-  }
-}
-#endif  // STEPAF_USE_TORCH
-
-static inline void InitVals(
-    std::vector<SArray<char> >& server_vals, int num_keys, size_t len) {
-  for (int key = 0; key < num_keys; key++) {
-    void* ptr = nullptr;
-#if DMLC_USE_CUDA
-    CUDA_CALL(cudaMalloc(&ptr, len));
-#else
-    AlignedMalloc(&ptr, len);
-#endif
-    SArray<char> vals;
-    vals.reset(reinterpret_cast<char*>(ptr), len * sizeof(char), [](void *){});
-    server_vals.push_back(vals);
-  }
 }
 
 static inline std::vector<int64_t> GetPercentile(
@@ -164,5 +99,40 @@ static inline void DumpLatency(const std::string& head, std::vector<int64_t>& ve
      << "us, max=" << vec[vec.size() - 1]  / 1000.0 << "us";
 }
 
+static inline at::Tensor CreateTensor(
+    std::vector<int64_t> shape,
+    at::ScalarType dtype,
+    int gpu,
+    bool random = false) {
+  auto options = torch::TensorOptions()
+                     .dtype(dtype)
+                     .memory_format(at::MemoryFormat::Contiguous)
+                     .device(at::Device(at::kCUDA, gpu));
+  if (random) {
+    return torch::rand(shape, options);
+  } else {
+    return torch::zeros(shape, options);
+  }
+}
+
+static inline void StartServer(
+    std::function<void(const AFTensorMeta& req_meta, AFTensorServer* server)>
+        func) {
+  AFTensorServer* server = new AFTensorServer(g_conf.gpu);
+  server->SetRequestHandle(func);
+  RegisterExitCallback([server]() { delete server; });
+}
+
+static inline void InitWorker(AFTensorWorker* kv) {
+  Postoffice::GetWorker(g_conf.gpu)->Barrier(0, ps::kWorkerGroup);
+  PS_LOG(INFO) << "finish worker init.";
+}
+
+static inline void StartScheduler() {
+  PS_LOG(INFO) << "Scheduler starts";
+  StartPS(0, Node::SCHEDULER, -1, true);
+  Finalize(0, Node::SCHEDULER, true);
+  PS_LOG(INFO) << "Scheduler ends";
+}
 
 #endif  // PS_TEST_COMMON_H_

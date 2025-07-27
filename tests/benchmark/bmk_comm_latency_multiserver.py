@@ -1,9 +1,7 @@
-
 import threading
 from queue import Queue
 
 import torch, os
-import time
 import fserver_lib as f
 import optimus
 from optimus.ops import silu_dot as optimus_silu_dot
@@ -43,8 +41,6 @@ def gen_pull_key(private_key, microbatch=0, worker_rank=-1):
             worker_rank = 0
     return private_key + microbatch * (1 << 8) + worker_rank * (1 << 16) + (1 << 24)
 
-def get_worker_rank(key : int):
-    return (key % (1 << 24)) / (1 << 16)
 
 def setup_seed(seed=42):
     import random
@@ -57,12 +53,12 @@ def setup_seed(seed=42):
 
 is_worker = os.environ.get('DMLC_ROLE') == 'worker'
 is_server = os.environ.get('DMLC_ROLE') == 'server'
-server_count = int(os.environ.get('DMLC_NUM_SERVER'))
-gpu = os.environ.get('STEPAF_GPU', '0')
+server_count = int(os.environ.get('DMLC_NUM_SERVER','1'))
+worker_count = int(os.environ.get('DMLC_NUM_WORKER','1'))
+gpu = os.environ.get('STEPMESH_GPU', '0')
 local_rank_num = int(os.environ.get('DMLC_GROUP_SIZE', '1'))
 node_rank = int(os.environ.get('DMLC_NODE_RANK', '0'))
 rank = node_rank * local_rank_num + int(gpu)
-print(rank)
 bsz, num_token, dim = 1, 64, 7168
 num_iters = 100000000
 
@@ -87,18 +83,16 @@ for mb in range(3):
     inp_tensors_buffers.append(tokens_buffers)
     inp_tensors_keys.append([gen_push_key(i, mb) for i in range(len(tokens_buffers))])
 
-
     o_tensors = []
     for _ in range(server_count ):
-        o_tensors +=  [torch.rand([num_token, dim], dtype=torch.bfloat16, device=f'cuda:{gpu}') for _ in range(bsz)]
-    out_tensors_buffers.append(
-       o_tensors
-    )
+        o_tensors += [torch.rand([num_token, dim], dtype=torch.bfloat16, device=f'cuda:{gpu}') for _ in range(bsz)]
+    out_tensors_buffers.append(o_tensors)
 
     out_tensors_keys.append([gen_pull_key(i, mb) for i in range(len(out_tensors_buffers))])
 
 
 print_queue = Queue()
+
 
 def print_thread():
     time_list = []
@@ -109,7 +103,7 @@ def print_thread():
         time_list.append((start, end))
         cost_list.append(costs)
 
-        if len(time_list) == 5000:
+        if len(time_list) == 500:
             overall_list = []
             python_req_costs = [[] for _ in range(3)]
             req_send_costs = [[] for _ in range(3)]
@@ -174,6 +168,7 @@ def print_thread():
             time_list = []
             cost_list = []
 
+
 if is_worker:
     th = threading.Thread(target=print_thread)
     th.start()
@@ -182,9 +177,10 @@ if is_worker:
     time_list = []
     net_cost_list = [[] for _ in range(bsz + 1 + bsz)]
     idx = 0
+
     def worker():
         global idx
-        start = f.GetNanoSecond()
+        start = f.get_nanosecond()
         handler = f.push_pull(
             inp_tensors_buffers[idx % 3],
             inp_tensors_keys[idx % 3],
@@ -192,13 +188,10 @@ if is_worker:
             out_tensors_keys[idx % 3],
         )
         idx += 1
-        # end1 = f.GetNanoSecond()
 
         handlers = f.get_all_handlers(handler)
-        # end2 = f.GetNanoSecond()
-
         f.wait(handler)
-        end = f.GetNanoSecond()
+        end = f.get_nanosecond()
 
         costs = [f.fetch_trace(handler) for handler in handlers]
         print_queue.put((start, end, costs))
@@ -208,24 +201,22 @@ if is_worker:
         worker()
 
 elif is_server:
-    # barrier for registration ops
-    out_tensors_buffers = [
-        torch.rand([num_token, dim], dtype=torch.bfloat16, device=f'cuda:{gpu}') for _ in range(bsz)
-    ]
-    f.barrier(True, True)
-
+    ret_buffer = torch.rand([65535, dim], dtype=torch.bfloat16, device='cuda')
     count = 0
+
     def server():
         global count
-        res_list = []
-        while len(res_list) == 0:
-            # time.sleep(0.1)
-            res_list = f.get_batch()
+        iter_count = 0
+        while True:
+            batches = f.get_batch()
+            if len(batches) != 0:
+                iter_count += 1
+                recv_tensor_list = [batches[i][1][0] for i in range(worker_count)]
+                comm_id_list = [batches[i][0] for i in range(worker_count)]
 
-        for res in res_list:
-            comm_id, batch, keys = res
-            f.respond(out_tensors_buffers, comm_id, True)
-    for _ in range(num_iters):
-        server()
+                f.respond_vec(ret_buffer, recv_tensor_list, comm_id_list)
+                if iter_count == num_iters:
+                    break
+    server()
 
 f.stop()

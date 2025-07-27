@@ -1,5 +1,26 @@
 # APIs
 
+## 1. StepMesh APIs
+
+StepMesh provides two levels of API, both of which use `torch.Tensor` as the core data struct.
+The Python Fserver API is designed for quick and easy integration into the system,
+making it ideal for users who need to get up and running rapidly. 
+On the other hand, the C++ API is tailored for experienced developers 
+who require deep-level performance tuning to optimize the system for specific use cases.
+
+### 1.1 Python API
+
+Developers can import Python API with the following after installing StepMesh into your environment.
+
+For details, please goto [Python API](./python.md)
+
+### 1.2 C++ API
+
+Developers can link `libaf.a` into your program for using C++ APIs.
+
+For details, please goto [C++ API](./c++.md)
+
+## 2. BytePS APIs
 
 The data communicated are presented as key-value
   pairs, where the key might be the `uint64_t` (defined by `ps::Key`) feature

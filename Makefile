@@ -43,11 +43,11 @@ CFLAGS += -DDMLC_USE_RDMA
 endif
 
 ifeq ($(USE_GDR), 1)
-CFLAGS += -DSTEPAF_USE_GDR
+CFLAGS += -DSTEPMESH_USE_GDR
 endif
 
 ifeq ($(ENABLE_TRACE), 1)
-CFLAGS += -DSTEPAF_ENABLE_TRACE
+CFLAGS += -DSTEPMESH_ENABLE_TRACE
 endif
 
 ifeq ($(USE_FABRIC), 1)
@@ -100,12 +100,10 @@ build/%.o: src/%.cc ${ZMQ}
 -include build/*.d
 -include build/*/*.d
 
-include tests/test.mk
 test: $(TEST)
 
 af:
 	@mkdir -p cmake_build
 	@cd cmake_build; cmake .. -DCMAKE_CUDA_COMPILER=$(CMAKE_CUDA_COMPILER) -DPython_EXECUTABLE=/usr/bin/python3 -DCUDA_TOOLKIT_ROOT_DIR=$(CUDA_TOOLKIT_ROOT_DIR); make -j
 	@mkdir -p build
-	@cp -f cmake_build/libaf.a build/libaf.a
 

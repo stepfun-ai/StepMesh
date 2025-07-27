@@ -1,4 +1,3 @@
-
 import threading
 from queue import Queue
 
@@ -43,8 +42,6 @@ def gen_pull_key(private_key, microbatch=0, worker_rank=-1):
             worker_rank = 0
     return private_key + microbatch * (1 << 8) + worker_rank * (1 << 16) + (1 << 24)
 
-def get_worker_rank(key : int):
-    return (key % (1 << 24)) / (1 << 16)
 
 def setup_seed(seed=42):
     import random
@@ -58,7 +55,7 @@ def setup_seed(seed=42):
 is_worker = os.environ.get('DMLC_ROLE') == 'worker'
 is_server = os.environ.get('DMLC_ROLE') == 'server'
 server_count = int(os.environ.get('DMLC_NUM_SERVER'))
-gpu = os.environ.get('STEPAF_GPU', '0')
+gpu = os.environ.get('STEPMESH_GPU', '0')
 local_rank_num = int(os.environ.get('DMLC_GROUP_SIZE', '1'))
 node_rank = int(os.environ.get('DMLC_NODE_RANK', '0'))
 rank = node_rank * local_rank_num + int(gpu)
@@ -94,11 +91,11 @@ for mb in range(3):
        o_tensors
     )
 
-
     out_tensors_keys.append([gen_pull_key(i, mb) for i in range(len(out_tensors_buffers))])
 
 
 print_queue = Queue()
+
 
 def print_thread():
     time_list = []
@@ -178,6 +175,7 @@ def print_thread():
 
             time_list = []
             cost_list = []
+
 
 if is_worker:
     th = threading.Thread(target=print_thread)

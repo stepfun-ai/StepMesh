@@ -100,7 +100,7 @@ struct RawMeta {
   int dim;
   // tensor shape
   int64_t shape[8];
-// #ifdef STEPAF_ENABLE_TRACE
+// #ifdef STEPMESH_ENABLE_TRACE
   // timestamp traces for the request message
   struct Trace request_trace;
   // timestamp traces for the response message

@@ -240,7 +240,7 @@ struct RendezvousStart {
 };
 
 struct RendezvousReply {
-#ifdef STEPAF_USE_GDR
+#ifdef STEPMESH_USE_GDR
   uint64_t meta_addr;
   uint32_t meta_rkey;
   uint64_t data_addr;
@@ -248,14 +248,14 @@ struct RendezvousReply {
 #else
   uint64_t addr;
   uint32_t rkey;
-#endif  // STEPAF_USE_GDR
+#endif  // STEPMESH_USE_GDR
   uint64_t origin_addr;
   uint32_t idx;
 };
 
 struct BufferContext {
   char* buffer = nullptr;  // Original buffer, for non-GDR or client-side GDR
-#ifdef STEPAF_USE_GDR
+#ifdef STEPMESH_USE_GDR
   char* meta_buffer = nullptr;   // For server-side GDR meta
   void* gpu_data_buffer = nullptr;  // For server-side GDR data
 #endif
@@ -281,7 +281,7 @@ struct RequestContext {
 };
 
 // <remote_addr, rkey, idx, local_addr>
-#ifdef STEPAF_USE_GDR
+#ifdef STEPMESH_USE_GDR
 // <meta_addr, meta_rkey, data_addr, data_rkey, idx, local_addr>
 typedef std::tuple<uint64_t, uint32_t, uint64_t, uint32_t, uint32_t,
                    MessageBuffer *>
@@ -289,7 +289,7 @@ typedef std::tuple<uint64_t, uint32_t, uint64_t, uint32_t, uint32_t,
 #else
 // <remote_addr, rkey, idx, local_addr>
 typedef std::tuple<uint64_t, uint32_t, uint32_t, MessageBuffer*> RemoteTuple;
-#endif  // STEPAF_USE_GDR
+#endif  // STEPMESH_USE_GDR
 
 // recver, <remote_addr, rkey, idx>
 typedef std::unordered_map<int, RemoteTuple> RemoteAndLocalAddress;

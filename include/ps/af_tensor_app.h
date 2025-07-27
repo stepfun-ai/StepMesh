@@ -64,8 +64,8 @@ class AFTensorWorker {
       : kv_(0, 0, instance_idx), instance_id_(instance_idx),
         pushpull_stop_(false) {
     gpu_ = -1;
-    Environment::Get()->find("STEPAF_GPU", &gpu_, gpu_);
-    PS_CHECK_GE(gpu_, 0) << "STEPAF_GPU is not set";
+    Environment::Get()->find("STEPMESH_GPU", &gpu_, gpu_);
+    PS_CHECK_GE(gpu_, 0) << "STEPMESH_GPU is not set";
     Backend::Get()->SetDevice(gpu_);
     for (int i = 0; i < kDefaultEventBufferSize; i ++) {
       events_.push_back(new TensorEvent());
@@ -179,9 +179,9 @@ class AFTensorWorker {
    * @param timestamp return by push, pull or pushpull operations
    */
   std::pair<struct Trace, struct Trace> FetchTrace(int timestamp) {
-#ifdef STEPAF_ENABLE_TRACE
+#ifdef STEPMESH_ENABLE_TRACE
     return kv_.FetchTrace(timestamp);
-#endif  // STEPAF_ENABLE_TRACE
+#endif  // STEPMESH_ENABLE_TRACE
     return std::make_pair(Trace(), Trace());
   }
 
@@ -200,7 +200,7 @@ class AFTensorWorker {
   }
 
   void PushPullWorker() {
-    BindCpuCore(5, 1);
+    BindCpuCore(4, 1);
     Backend::Get()->SetDevice(gpu_);
     while (!pushpull_stop_.load()) {
       AFTensorRequest req;
@@ -308,11 +308,25 @@ class AFTensorWorker {
                       std::vector<int>& push_timestamps,
                       KeyTensorBatch& pull_tensors,
                       std::vector<int>& pull_timestamps) {
+    PS_CHECK_GE(push_tensors.size() + pull_tensors.size(), 1);
     Backend::Get()->SetDevice(gpu_);
     auto server_ranges =
         Postoffice::GetWorker(instance_id_)->GetServerKeyRanges();
     int server_count = server_ranges.size();
     PS_CHECK_GT(server_count, 0) << "zero servers and cannot pushpull";
+
+
+    if (push_tensors.size() + pull_tensors.size() == 1) {
+      SArray<Key> key(1);
+      if (push_tensors.size() == 1) {
+        *key.data() = push_tensors[0].key;
+        ZPush_(push_timestamps[0], key,
+               push_tensors[0].val);
+      } else {
+        ZPull_(pull_timestamps[0], key, pull_tensors, 0);
+      }
+      return;
+    }
 
     bool first = true;
     for (size_t i = 0; i < push_tensors.size(); i++) {
@@ -595,7 +609,7 @@ class AFTensorServer {
   }
 
   void ResponseWorker() {
-    BindCpuCore(6, 2);
+    BindCpuCore(3, 1);
     Backend::Get()->SetDevice(gpu_);
     PS_LOG(INFO) << "Start ResponseWorker " << gpu_;
     while (!response_stop_.load()) {
@@ -623,6 +637,8 @@ class AFTensorServer {
       af_meta.sender = req_meta.sender;
       af_meta.Add(req_meta, FromBlob(req_meta, req_data));
       af_meta.single = true;
+      af_meta.sender_rank =
+          Postoffice::GetServer(gpu_)->IDtoRank(af_meta.sender);
       request_handle_(af_meta, this);
     } else {
       AFTensorMeta* af_meta = nullptr;
@@ -635,7 +651,7 @@ class AFTensorServer {
         af_meta = new AFTensorMeta;
         af_meta->sender = req_meta.sender;
         af_meta->sender_rank =
-            Postoffice::GetServer(gpu_)->InstanceIDtoGroupRank(af_meta->sender);
+            Postoffice::GetServer(gpu_)->IDtoRank(af_meta->sender);
         af_meta->single = false;
         if (batch_data_.find(req_meta.sender) != batch_data_.end()
             && batch_data_[req_meta.sender] != nullptr) {

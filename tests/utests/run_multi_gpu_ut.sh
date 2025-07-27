@@ -22,9 +22,10 @@ export DMLC_NUM_SERVER=1
 export DMLC_INTERFACE=brainpf_bond0        # my RDMA interface
 export DMLC_PS_ROOT_URI=$(ip -o -4 addr | grep ${DMLC_INTERFACE} | awk '{print $4}' | cut -d'/' -f1)
 export DMLC_PS_ROOT_PORT=${DMLC_PS_ROOT_PORT:-12278} # scheduler's port (can random choose)
-export DMLC_SPLIT_QP_LAG=0
+export STEPMESH_SPLIT_QP_LAG=0
 export DMLC_ENABLE_RDMA=ibverbs
 export DMLC_GROUP_SIZE=8
+export DMLC_NODE_RANK=0
 
 echo "SCHEDULER_IP is ${DMLC_PS_ROOT_URI}"
 
@@ -37,13 +38,13 @@ DMLC_ROLE=scheduler $SCHEDULER_BIN &
 
 export DMLC_INTERFACE=auto
 for P in {0..7}; do
-  DMLC_ROLE=server STEPAF_GPU=${P} $SERVER_BIN &
+  DMLC_ROLE=server STEPMESH_GPU=${P} $SERVER_BIN &
 done
 
 sleep 1
 
 for P in {0..7}; do
-  DMLC_ROLE=worker STEPAF_GPU=${P} $WORKER_BIN &
+  DMLC_ROLE=worker STEPMESH_GPU=${P} $WORKER_BIN &
 done
 
 wait

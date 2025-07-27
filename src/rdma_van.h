@@ -356,7 +356,7 @@ class RDMAVan : public Van {
 
     auto addr_tuple =
         GetRemoteAndLocalInfo(msg.meta.key, msg.meta.push, remote_id);
-#ifdef STEPAF_USE_GDR
+#ifdef STEPMESH_USE_GDR
     MessageBuffer *msg_buf = std::get<5>(addr_tuple);  // local message buffer
 #else
     MessageBuffer *msg_buf = std::get<3>(addr_tuple);  // local message buffer
@@ -373,17 +373,17 @@ class RDMAVan : public Van {
       msg.meta.tensor_ev = nullptr;
     }
 
-#ifdef STEPAF_ENABLE_TRACE
+#ifdef STEPMESH_ENABLE_TRACE
     if (msg.meta.request) {
       msg.meta.request_trace.postsend = GetNanosecond();
     } else {
       msg.meta.response_trace.postsend = GetNanosecond();
     }
-#endif  // STEPAF_ENABLE_TRACE
+#endif  // STEPMESH_ENABLE_TRACE
     PackMeta(msg.meta, &(msg_buf->inline_buf), &meta_len);
-#ifdef STEPAF_ENABLE_TRACE
+#ifdef STEPMESH_ENABLE_TRACE
     PrintSendLog(msg, msg_buf, addr_tuple);
-#endif  // STEPAF_ENABLE_TRACE
+#endif  // STEPMESH_ENABLE_TRACE
     if (msg.meta.push && msg.meta.request) {
       // worker, push request
       trans->SendPushRequest(msg, msg_buf, addr_tuple);
@@ -420,7 +420,7 @@ class RDMAVan : public Van {
 
     // the second argument is actually deprecated,
     // we keep it as is in order to be compatible
-#ifdef STEPAF_USE_GDR
+#ifdef STEPMESH_USE_GDR
     bool is_server = static_cast<RDMATransport*>(trans.get())->is_server_;
     char* meta_buf = is_server ? buffer_ctx->meta_buffer : buffer_ctx->buffer;
     PS_CHECK(meta_buf);
@@ -450,20 +450,20 @@ class RDMAVan : public Van {
     UnpackMeta(meta_buf, buffer_ctx->meta_len, &msg->meta);
     int meta_len = GetPackMetaLen(msg->meta);
 
-#ifdef STEPAF_ENABLE_TRACE
+#ifdef STEPMESH_ENABLE_TRACE
     if (msg->meta.request) {
       msg->meta.request_trace.postrecv = std::get<uint64_t>(notification);
     } else {
       msg->meta.response_trace.postrecv = std::get<uint64_t>(notification);
     }
-#endif  // STEPAF_ENABLE_TRACE
+#endif  // STEPMESH_ENABLE_TRACE
 
     int total_len = 0;
     total_len += meta_len;
 
-#ifdef STEPAF_ENABLE_TRACE
+#ifdef STEPMESH_ENABLE_TRACE
     PrintRecvLog(msg, buffer_ctx, meta_len);
-#endif  // STEPAF_ENABLE_TRACE
+#endif  // STEPMESH_ENABLE_TRACE
     if (!IsValidPushpull(*msg)) {
       return total_len;
     }
@@ -604,7 +604,7 @@ class RDMAVan : public Van {
     msgbuf_cache_.erase(msg_buf);
   }
 
-#ifdef STEPAF_USE_GDR
+#ifdef STEPMESH_USE_GDR
   void StoreRemoteAndLocalInfo(MessageBuffer *msg_buf, uint64_t meta_addr,
                                uint32_t meta_rkey, uint64_t data_addr,
                                uint32_t data_rkey, uint32_t idx) {
@@ -644,7 +644,7 @@ class RDMAVan : public Van {
     auto is_push = msg.meta.push;
     auto recver = msg.meta.recver;
 
-#ifdef STEPAF_USE_GDR
+#ifdef STEPMESH_USE_GDR
     // When GDR is enabled, this function is only used for non-push/pull,
     // where data_addr and data_rkey are not used.
     auto t = std::make_tuple(remote_addr, rkey, 0, 0, idx, msg_buf);
@@ -777,7 +777,7 @@ class RDMAVan : public Van {
   void PollCQ() {
     // Pre-allocated work completions array used for polling
     struct ibv_wc wc[kMaxConcurrentWorkRequest];
-    BindCpuCore(2 , 2);
+    BindCpuCore(1 , 1);
 
     while (!should_stop_.load()) {
       int ne = ibv_poll_cq(cq_, kMaxConcurrentWorkRequest, wc);
@@ -849,7 +849,7 @@ class RDMAVan : public Van {
                   reinterpret_cast<MessageBuffer *>(origin_addr);
               // Before RDMA write, store the remote info so that
               // subsequent write does not need repeated rendezvous
-#ifdef STEPAF_USE_GDR
+#ifdef STEPMESH_USE_GDR
               StoreRemoteAndLocalInfo(msg_buf, resp->meta_addr, resp->meta_rkey,
                                       resp->data_addr, resp->data_rkey, idx);
 #else
@@ -859,12 +859,9 @@ class RDMAVan : public Van {
               Message *msg = GetFirstMsg(msg_buf);
               auto addr_tuple = GetRemoteAndLocalInfo(
                   msg->meta.key, msg->meta.push, msg->meta.recver);
-#ifdef STEPAF_ENABLE_TRACE
-              // PrintSendLog(*msg, msg_buf, addr_tuple);
-#endif  // STEPAF_ENABLE_TRACE
               auto trans = PS_CHECK_NOTNULL(endpoint->GetTransport());
               if (!IsValidPushpull(*msg)) {
-#ifdef STEPAF_USE_GDR
+#ifdef STEPMESH_USE_GDR
                 // control message. meta_addr contains the full buffer.
                 trans->RDMAWriteWithImm(msg_buf, resp->meta_addr,
                                         resp->meta_rkey, idx);
@@ -1087,7 +1084,7 @@ class RDMAVan : public Van {
     if (cq_polling_thread_ == nullptr) {
       cq_polling_thread_.reset(new std::thread(&RDMAVan::PollCQ, this));
       int gpu = -1;
-      Environment::Get()->find("STEPAF_GPU", &gpu, gpu);
+      Environment::Get()->find("STEPMESH_GPU", &gpu, gpu);
     }
 
     {

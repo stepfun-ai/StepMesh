@@ -22,8 +22,8 @@ export DMLC_INTERFACE=auto
 
 export DMLC_NODE_HOST=${SCHEDULER_IP}
 export DMLC_INTERFACE=auto
-export DMLC_SPLIT_QP_LAG=1
-export STEPAF_GPU=0
+export STEPMESH_SPLIT_QP_LAG=1
+export STEPMESH_GPU=0
 # export PS_VERBOSE=2
 
 DMLC_ROLE=scheduler python3 $THIS_DIR/$BIN.py &

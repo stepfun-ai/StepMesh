@@ -7,7 +7,7 @@ is_server = os.environ.get('DMLC_ROLE') == 'server'
 f.init()
 
 if is_worker:
-    gpu = os.environ.get('STEPAF_GPU')
+    gpu = os.environ.get('STEPMESH_GPU')
     push_tensors = [
         torch.rand([1, 8192], dtype=torch.float32, device=f'cuda:{gpu}'),
         torch.rand([1, 8192], dtype=torch.float32, device=f'cuda:{gpu}'),
@@ -27,7 +27,7 @@ if is_worker:
     print("worker test done")
 
 elif is_server:
-    gpu = os.environ.get('STEPAF_GPU')
+    gpu = os.environ.get('STEPMESH_GPU')
     torch.set_default_device('cuda:{}'.format(gpu))
     res = []
     while len(res) == 0:

@@ -14,9 +14,9 @@
 #ifdef DMLC_USE_CUDA
 #include <cuda_runtime.h>
 #endif  // DMLC_USE_CUDA
-#ifdef STEPAF_USE_TORCH
+#ifdef STEPMESH_USE_TORCH
 #include <ATen/cuda/CUDAEvent.h>
-#endif  // STEPAF_USE_TORCH
+#endif  // STEPMESH_USE_TORCH
 
 #include "ps/sarray.h"
 #include "ps/internal/multi_qp.h"

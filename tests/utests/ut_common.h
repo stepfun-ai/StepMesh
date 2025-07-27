@@ -44,7 +44,7 @@ static inline void InitUtestConfig() {
                            &g_worker_conf.tensor_num,
                            g_worker_conf.tensor_num);
 
-  Environment::Get()->find("STEPAF_GPU", &g_conf.gpu, g_conf.gpu);
+  Environment::Get()->find("STEPMESH_GPU", &g_conf.gpu, g_conf.gpu);
 }
 
 static inline at::Tensor CreateTensor(

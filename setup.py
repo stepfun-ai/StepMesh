@@ -57,15 +57,15 @@ if __name__ == "__main__":
                         f'-D_GLIBCXX_USE_CXX11_ABI={str(int(torch_cxx11_abi))}',
                         '-DDMLC_USE_ZMQ',
                         '-DDMLC_USE_CUDA', 
-                        '-DSTEPAF_USE_GDR',
+                        '-DSTEPMESH_USE_GDR',
                         '-DDMLC_USE_RDMA', 
-                        '-DSTEPAF_USE_TORCH',
+                        '-DSTEPMESH_USE_TORCH',
                     ],
                     'nvcc': ['-O3', '-gencode', 'arch=compute_70,code=sm_70', 
                                 '--use_fast_math'] + cc_flag,
                 },
                 extra_link_args=['-lrdmacm', '-libverbs'],
-                extra_objects=[f"{__PS_PATH__}/build/libaf.a", f"{__PS_PATH__}/deps/lib/libzmq.a"],
+                extra_objects=[f"{__PS_PATH__}/cmake_build/libaf.a", f"{__PS_PATH__}/deps/lib/libzmq.a"],
             )
         ],
         cmdclass={
