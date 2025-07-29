@@ -95,12 +95,12 @@ To debug, set `PS_VERBOSE=1` to see important logs during connection setup, and 
 - Single GPU Example: Suppose you want to run with 1 worker and 1 server on same server.
 
 ```bash
-# ROLE: joinly run scheduler, worker and server; RNIC: your first rdma nic; 
+# ROLE: jointly run scheduler, worker and server; RNIC: your first rdma nic; 
 ROLE=joint RNIC=brainpf_bond0 bash tests/fserver/run_single_gpu.sh
 ```
-- Multiple GPU Exmaple: Suppose you want to run with 8 workers and 8 servers on different GPUs of the same server.
+- Multiple GPU Example: Suppose you want to run with 8 workers and 8 servers on different GPUs of the same server.
 ```bash
-# ROLE: joinly run scheduler, worker and server; RNIC: your first rdma nic; 
+# ROLE: jointly run scheduler, worker and server; RNIC: your first rdma nic; 
 ROLE=joint RNIC=brainpf_bond0 bash tests/fserver/run_multi_gpu.sh
 ```
 
