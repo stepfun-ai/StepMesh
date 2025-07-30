@@ -5,7 +5,7 @@
  * @brief  network utilities
  */
 #ifndef NETWORK_UTILS_H_
-#define  NETWORK_UTILS_H_
+#define NETWORK_UTILS_H_
 #include <unistd.h>
 #ifdef _MSC_VER
 #include <iphlpapi.h>
@@ -19,11 +19,11 @@
 #include <net/if.h>
 #include <netinet/in.h>
 #endif
-#include <string>
-#include <cstring>
-#include <cstdio>
-#include <utility>
 #include <array>
+#include <cstdio>
+#include <cstring>
+#include <string>
+#include <utility>
 #include <vector>
 #ifdef DMLC_USE_RDMA
 #include <rdma/rdma_cma.h>
@@ -32,16 +32,15 @@
 #include <cuda_runtime.h>
 #endif
 
-#include "ps/internal/utils.h"
 #include "ps/internal/postoffice.h"
+#include "ps/internal/utils.h"
 
 namespace ps {
 
 #ifdef DMLC_USE_RDMA
 class NetDev {
  public:
-  NetDev(struct ibv_context *context,
-         int dev_id, struct ibv_device *dev,
+  NetDev(struct ibv_context* context, int dev_id, struct ibv_device* dev,
          int port_id, struct ibv_port_attr port);
   ~NetDev();
 
@@ -51,7 +50,7 @@ class NetDev {
    */
   int get_best_gid_index();
 
-  int get_best_gid(ibv_gid *gid, int *gid_idx);
+  int get_best_gid(ibv_gid* gid, int* gid_idx);
 
   int get_port();
 
@@ -59,7 +58,7 @@ class NetDev {
 
   std::string get_name();
 
-  char *get_pci_path();
+  char* get_pci_path();
 
   std::string get_ip();
 
@@ -69,12 +68,12 @@ class NetDev {
 
  private:
   std::string dev_name_;
-  ibv_context *context_ = nullptr;
+  ibv_context* context_ = nullptr;
 
   int dev_id_;
   uint8_t port_;
   uint8_t link_;
-  char *pci_path_;
+  char* pci_path_;
   int real_port_;
   int max_qp_num_;
   int gid_tbl_len_;
@@ -181,8 +180,8 @@ static inline void GetIP(const std::string& interface, std::string* ip) {
  *
  * only support IPv4
  */
-static inline void GetAvailableInterfaceAndIP(
-    std::string* interface, std::string* ip) {
+static inline void GetAvailableInterfaceAndIP(std::string* interface,
+                                              std::string* ip) {
 #ifdef _MSC_VER
   typedef std::basic_string<TCHAR> tstring;
   IP_ADAPTER_INFO* pAdapterInfo = NULL;
@@ -335,8 +334,8 @@ static inline int GetAvailablePort(int num_ports, std::array<int, 32>* ports) {
  * \brief return the IP address and Interface based on current GPU
  * \return 0 on failure or no cuda, 1 when getting the interface successfully
  */
-static inline int GetInterfaceAndIPByCurrentGpu(
-    std::string* interface, std::string* ip) {
+static inline int GetInterfaceAndIPByCurrentGpu(std::string* interface,
+                                                std::string* ip) {
   interface->clear();
   ip->clear();
 
@@ -363,7 +362,7 @@ static inline int GetInterfaceAndIPByCurrentGpu(
   if (numDev <= 0) return 0;
 
   std::vector<NetDev*> devs;
-  struct ibv_context *context = nullptr;
+  struct ibv_context* context = nullptr;
   for (int d = 0; d < numDev; d++) {
     if (nullptr != context && 0 != ibv_close_device(context)) {
       return 0;
@@ -386,8 +385,8 @@ static inline int GetInterfaceAndIPByCurrentGpu(
       if (port_attr.state != IBV_PORT_ACTIVE) {
         continue;
       }
-      if (port_attr.link_layer != IBV_LINK_LAYER_INFINIBAND
-          && port_attr.link_layer != IBV_LINK_LAYER_ETHERNET) {
+      if (port_attr.link_layer != IBV_LINK_LAYER_INFINIBAND &&
+          port_attr.link_layer != IBV_LINK_LAYER_ETHERNET) {
         continue;
       }
 
@@ -422,10 +421,8 @@ static inline int GetInterfaceAndIPByCurrentGpu(
       continue;
     }
 
-    while (path[prefixLen] != '\0'
-           && net_pci_path[prefixLen] != '\0'
-           && net_pci_path[prefixLen] == path[prefixLen]
-           && prefixLen < 512) {
+    while (path[prefixLen] != '\0' && net_pci_path[prefixLen] != '\0' &&
+           net_pci_path[prefixLen] == path[prefixLen] && prefixLen < 512) {
       prefixLen++;
     }
     if (prefixLen >= maxPrefixLen) {

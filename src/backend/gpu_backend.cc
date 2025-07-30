@@ -2,11 +2,12 @@
  *  Copyright (C) by StepAI Contributors. 2025.
  */
 
+#include "ps/internal/gpu_backend.h"
+
 #include <ATen/cuda/CUDAContext.h>
 #include <ATen/cuda/CUDAEvent.h>
 
 #include "ps/internal/backend.h"
-#include "ps/internal/gpu_backend.h"
 
 namespace ps {
 
@@ -24,8 +25,8 @@ int GpuBackend::SetDevice(int dev) {
     gpu_idx = gpu_idx_;
     auto result = cudaSetDevice(gpu_idx_);
     if (result != cudaSuccess) {
-      PS_LOG(WARNING) << "failed to set device to "
-                      << gpu_idx << " cuda result=" << result;
+      PS_LOG(WARNING) << "failed to set device to " << gpu_idx
+                      << " cuda result=" << result;
     }
   }
 
@@ -60,9 +61,9 @@ void* GpuBackend::Alloc(uint64_t size) {
 void GpuBackend::Free(void* m) {
   PS_CHECK_NE(m, nullptr) << "backend cannot free null memory";
   cudaError_t err = cudaFree(m);
-  PS_CHECK_EQ(err, cudaSuccess) << "cudaFree failed for ptr "
-                                << reinterpret_cast<void*>(m)
-                                << " (" << cudaGetErrorString(err) << ")";
+  PS_CHECK_EQ(err, cudaSuccess)
+      << "cudaFree failed for ptr " << reinterpret_cast<void*>(m) << " ("
+      << cudaGetErrorString(err) << ")";
 }
 
 void* GpuBackend::CreateEvent() {
@@ -107,19 +108,18 @@ int GpuBackend::SyncEvent(void* event) {
 void* GpuBackend::CreateCudaEvent() {
   cudaEvent_t* ev = nullptr;
   cudaMallocHost(&ev, sizeof(cudaEvent_t));
-  auto status = cudaEventCreateWithFlags(
-      ev, cudaEventDisableTiming);
-  PS_CHECK_EQ(status, cudaSuccess) << "cudaEventCreateWithFlags failed for gpu "
-                                   << gpu_idx_;
+  auto status = cudaEventCreateWithFlags(ev, cudaEventDisableTiming);
+  PS_CHECK_EQ(status, cudaSuccess)
+      << "cudaEventCreateWithFlags failed for gpu " << gpu_idx_;
   return reinterpret_cast<void*>(ev);
 }
 
 int GpuBackend::FreeCudaEvent(void* event) {
   auto ev = reinterpret_cast<cudaEvent_t*>(event);
   cudaError_t err = cudaEventDestroy(*ev);
-  PS_CHECK_EQ(err, cudaSuccess) << "cudaEventDestroy failed for event "
-                                << reinterpret_cast<void*>(event)
-                                << " (" << cudaGetErrorString(err) << ")";
+  PS_CHECK_EQ(err, cudaSuccess)
+      << "cudaEventDestroy failed for event " << reinterpret_cast<void*>(event)
+      << " (" << cudaGetErrorString(err) << ")";
   cudaFreeHost(ev);
   return BACKEND_OK;
 }
@@ -173,8 +173,8 @@ void* GpuBackend::CreateMemEvent() {
   AT_CUDA_CHECK(cudaMallocHost(&ev, sizeof(GpuBackendMemEvent)));
   AT_CUDA_CHECK(cudaMalloc(&(ev->gpu_flag), sizeof(int)));
   AT_CUDA_CHECK(cudaMemset(ev->gpu_flag, 0, sizeof(int)));
-  AT_CUDA_CHECK(cudaMallocHost(reinterpret_cast<void**>(&(ev->cpu_flag)),
-                               sizeof(int)));
+  AT_CUDA_CHECK(
+      cudaMallocHost(reinterpret_cast<void**>(&(ev->cpu_flag)), sizeof(int)));
   *ev->cpu_flag = 0;
   return reinterpret_cast<void*>(ev);
 }
@@ -198,8 +198,8 @@ int GpuBackend::RecordMemEvent(void* event, void* stream) {
   }
 
   AT_CUDA_CHECK(cudaMemcpyAsync(reinterpret_cast<void*>(ev->cpu_flag),
-                             ev->gpu_flag, sizeof(int),
-                             cudaMemcpyDeviceToHost, cuda_stream));
+                                ev->gpu_flag, sizeof(int),
+                                cudaMemcpyDeviceToHost, cuda_stream));
   return BACKEND_OK;
 }
 

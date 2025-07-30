@@ -3,7 +3,7 @@
  */
 
 #ifndef PS_INTERNAL_GPU_BACKEND_H_
-#define  PS_INTERNAL_GPU_BACKEND_H_
+#define PS_INTERNAL_GPU_BACKEND_H_
 
 #include <memory>
 

@@ -94,7 +94,7 @@ Van *Van::Create(const std::string &type, Postoffice *postoffice) {
   } else if (type == "1") {
     PS_LOG(INFO) << "Creating RDMAVan.";
     PS_LOG(WARNING) << "DMLC_ENABLE_RDMA=1 will be deprecated. "
-                 << "Please use DMLC_ENABLE_RDMA=ibverbs instead.";
+                    << "Please use DMLC_ENABLE_RDMA=ibverbs instead.";
     return new RDMAVan(postoffice);
 #endif
 #ifdef DMLC_USE_FABRIC
@@ -463,7 +463,7 @@ void Van::ProcessDataMsg(Message *msg) {
   int customer_id = postoffice_->is_worker() ? msg->meta.customer_id : app_id;
   auto *obj = postoffice_->GetCustomer(app_id, customer_id, 5);
   PS_CHECK(obj) << "timeout (5 sec) to wait App " << app_id << " customer "
-             << customer_id << " ready at " << my_node_.role;
+                << customer_id << " ready at " << my_node_.role;
   // obj->Accept(*msg);
   obj->DirectProcess(*msg);
 
@@ -554,12 +554,12 @@ void Van::Start(int customer_id, bool standalone) {
       if (interface == "auto" || interface == "AUTO") {
         GetInterfaceAndIPByCurrentGpu(&interface, &ip);
         PS_LOG(INFO) << "automatic detect interface and ip from gpu: "
-                  << interface << " (" << ip << ")";
+                     << interface << " (" << ip << ")";
         Environment::Get()->set("DMLC_NODE_HOST", ip);
         Environment::Get()->set("DMLC_INTERFACE", interface);
       } else {
-        PS_LOG(INFO) << " interface and ip from env: "
-                  << interface << " (" << ip << ")";
+        PS_LOG(INFO) << " interface and ip from env: " << interface << " ("
+                     << ip << ")";
       }
       if (ip.empty()) {
         if (!interface.size()) {
@@ -726,7 +726,7 @@ void Van::Receiving() {
 
 #ifdef STEPMESH_ENABLE_TRACE
     PS_LOG(TRACE) << this->GetType() << " " << my_node_.id
-               << "\treceived: " << msg.DebugString();
+                  << "\treceived: " << msg.DebugString();
 #endif
     // duplicated message
     if (resender_ && resender_->AddIncomming(msg)) continue;
@@ -774,12 +774,13 @@ void Van::PackMeta(const Meta &meta, char **meta_buf, int *buf_size) {
     *meta_buf = new char[*buf_size + 1];
   }
 
-  RawMeta *raw = reinterpret_cast<RawMeta*>(*meta_buf);
+  RawMeta *raw = reinterpret_cast<RawMeta *>(*meta_buf);
   bzero(raw, sizeof(RawMeta));
   char *raw_body = *meta_buf + sizeof(RawMeta);
   auto data_type_len = meta.data_type.size();
-  int *raw_data_type = reinterpret_cast<int*>(raw_body + meta.body.size());
-  RawNode *raw_node = reinterpret_cast<RawNode*>(raw_data_type + data_type_len);
+  int *raw_data_type = reinterpret_cast<int *>(raw_body + meta.body.size());
+  RawNode *raw_node =
+      reinterpret_cast<RawNode *>(raw_data_type + data_type_len);
 
   // convert into raw buffer
   raw->head = meta.head;
@@ -794,11 +795,8 @@ void Van::PackMeta(const Meta &meta, char **meta_buf, int *buf_size) {
   raw->simple_app = meta.simple_app;
   raw->customer_id = meta.customer_id;
 #ifdef STEPMESH_ENABLE_TRACE
-  memcpy(&raw->request_trace,
-         &meta.request_trace,
-         sizeof(meta.request_trace));
-  memcpy(&raw->response_trace,
-         &meta.response_trace,
+  memcpy(&raw->request_trace, &meta.request_trace, sizeof(meta.request_trace));
+  memcpy(&raw->response_trace, &meta.response_trace,
          sizeof(meta.response_trace));
 #endif  // STEPMESH_ENABLE_TRACE
   int data_type_count = 0;
@@ -866,19 +864,19 @@ void Van::PackMeta(const Meta &meta, char **meta_buf, int *buf_size) {
   raw->is_tensor = meta.is_tensor;
   raw->dtype = meta.dtype;
   raw->dim = meta.shape.size();
-  for (int i = 0 ; i < raw->dim; i++) {
+  for (int i = 0; i < raw->dim; i++) {
     raw->shape[i] = meta.shape[i];
   }
 }
 
 void Van::UnpackMeta(const char *meta_buf, int buf_size, Meta *meta) {
-  auto* raw = reinterpret_cast<const RawMeta*>(meta_buf);
+  auto *raw = reinterpret_cast<const RawMeta *>(meta_buf);
   const char *raw_body = meta_buf + sizeof(RawMeta);
-  const int *raw_data_type = reinterpret_cast<const int*>(
-      raw_body + raw->body_size);
+  const int *raw_data_type =
+      reinterpret_cast<const int *>(raw_body + raw->body_size);
   auto data_type_len = raw->data_type_size;
-  const RawNode *raw_node = reinterpret_cast<const RawNode*>
-      (raw_data_type + data_type_len);
+  const RawNode *raw_node =
+      reinterpret_cast<const RawNode *>(raw_data_type + data_type_len);
 
   // to meta
   meta->head = raw->head;
@@ -908,8 +906,7 @@ void Van::UnpackMeta(const char *meta_buf, int buf_size, Meta *meta) {
   meta->request_trace.start = raw->request_trace.start;
   meta->request_trace.postsend = raw->request_trace.postsend;
   if (!meta->request) {
-    memcpy(&meta->request_trace,
-           &raw->request_trace,
+    memcpy(&meta->request_trace, &raw->request_trace,
            sizeof(raw->request_trace));
     meta->response_trace.start = raw->response_trace.start;
     meta->response_trace.postsend = raw->response_trace.postsend;
@@ -946,7 +943,7 @@ void Van::UnpackMeta(const char *meta_buf, int buf_size, Meta *meta) {
   meta->sid = raw->sid;
   meta->is_tensor = raw->is_tensor;
   meta->dtype = raw->dtype;
-  for (int i = 0 ; i < raw->dim; i++) {
+  for (int i = 0; i < raw->dim; i++) {
     meta->shape.push_back(raw->shape[i]);
   }
 }

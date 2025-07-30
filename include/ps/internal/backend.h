@@ -2,27 +2,24 @@
  *  Copyright (C) by StepAI Contributors. 2025.
  */
 #ifndef PS_INTERNAL_BACKEND_H_
-#define  PS_INTERNAL_BACKEND_H_
+#define PS_INTERNAL_BACKEND_H_
 
 #include <ATen/ATen.h>
-#include <torch/torch.h>
 #include <ATen/cuda/CUDAContext.h>
 #include <ATen/cuda/CUDAEvent.h>
+#include <torch/torch.h>
 
 #include <memory>
 #include <string>
-#include <utility>
 #include <unordered_map>
+#include <utility>
 
-#include "ps/internal/env.h"
 #include "dmlc/logging.h"
+#include "ps/internal/env.h"
 
 namespace ps {
 
-enum {
-  BACKEND_OK = 0,
-  BACKEND_FAILED = -1
-};
+enum { BACKEND_OK = 0, BACKEND_FAILED = -1 };
 
 /**
  * \brief Abstract Backend Class
@@ -93,12 +90,9 @@ class Backend {
    * \brief Get the backend implementation
    * @return the backend implementation
    */
-  static inline Backend* Get() {
-    return GetImpl();
-  }
+  static inline Backend* Get() { return GetImpl(); }
 
-  static void Register(const std::string& name,
-                       Backend* backend) {
+  static void Register(const std::string& name, Backend* backend) {
     RegisterImpl(name, backend);
   }
 
@@ -116,19 +110,17 @@ class Backend {
       std::string backend_type = "GPU";
       backend_type = Environment::Get()->find("STEPMESH_BAKCEND", backend_type);
       PS_CHECK_NE(backends_.find(backend_type), backends_.end())
-          << "failed to get backend impl: " <<  backend_type;
+          << "failed to get backend impl: " << backend_type;
       backend_impl = backends_[backend_type];
     }
     return backend_impl;
   }
 
-  static void RegisterImpl(const std::string& name,
-                           Backend* backend) {
+  static void RegisterImpl(const std::string& name, Backend* backend) {
     std::unique_lock<std::mutex> lock(backends_mutex_);
     backends_[name] = backend;
   }
 };
-
 
 }  // namespace ps
 

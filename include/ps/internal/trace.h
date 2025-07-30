@@ -2,7 +2,7 @@
  *  Copyright (C) by StepAI Contributors. 2025.
  */
 #ifndef PS_INTERNAL_TRACE_H_
-#define  PS_INTERNAL_TRACE_H_
+#define PS_INTERNAL_TRACE_H_
 
 namespace ps {
 

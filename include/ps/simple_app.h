@@ -2,7 +2,7 @@
  *  Copyright (c) 2015 by Contributors
  */
 #ifndef PS_SIMPLE_APP_H_
-#define  PS_SIMPLE_APP_H_
+#define PS_SIMPLE_APP_H_
 #include <string>
 
 #include "ps/internal/message.h"

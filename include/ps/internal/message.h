@@ -3,13 +3,12 @@
  *  Modifications Copyright (C) by StepAI Contributors. 2025.
  */
 #ifndef PS_INTERNAL_MESSAGE_H_
-#define  PS_INTERNAL_MESSAGE_H_
+#define PS_INTERNAL_MESSAGE_H_
 #include <array>
 #include <limits>
 #include <sstream>
 #include <string>
 #include <vector>
-
 
 #ifdef DMLC_USE_CUDA
 #include <cuda_runtime.h>
@@ -18,10 +17,10 @@
 #include <ATen/cuda/CUDAEvent.h>
 #endif  // STEPMESH_USE_TORCH
 
-#include "ps/sarray.h"
+#include "ps/internal/backend.h"
 #include "ps/internal/multi_qp.h"
 #include "ps/internal/trace.h"
-#include "ps/internal/backend.h"
+#include "ps/sarray.h"
 
 namespace ps {
 /** \brief data type */
@@ -214,9 +213,7 @@ class TensorEvent {
     ev_ = Backend::Get()->CreateEvent();
   }
 
-  ~TensorEvent() {
-    Backend::Get()->FreeEvent(ev_);
-  }
+  ~TensorEvent() { Backend::Get()->FreeEvent(ev_); }
 
   void Record(void* stream = nullptr) {
     int result = Backend::Get()->RecordEvent(ev_, stream);
@@ -233,9 +230,7 @@ class TensorEvent {
     is_recorded_ = false;
   }
 
-  void Release() {
-    is_released_ = true;
-  }
+  void Release() { is_released_ = true; }
 
   bool Occupy() {
     if (is_released_) {
@@ -269,10 +264,8 @@ struct Meta {
         push(false),
         simple_app(false),
         slave_qp_num(0) {
-          FOR_QPS {
-            slave_qp_counter[qpIndex] = 0;
-          }
-        }
+    FOR_QPS { slave_qp_counter[qpIndex] = 0; }
+  }
   std::string DebugString() const {
     std::stringstream ss;
     if (sender == Node::kEmpty) {

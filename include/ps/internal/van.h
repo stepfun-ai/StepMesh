@@ -3,7 +3,7 @@
  *  Modifications Copyright (C) Mellanox Technologies Ltd. 2020.
  */
 #ifndef PS_INTERNAL_VAN_H_
-#define  PS_INTERNAL_VAN_H_
+#define PS_INTERNAL_VAN_H_
 #include <atomic>
 #include <ctime>
 #include <functional>
@@ -125,11 +125,8 @@ class Van {
     PS_CHECK(false) << "recv buffer registration is not supported";
   }
 
-  virtual void QueryRecvBuffer(uint64_t key,
-                               int node_id,
-                               void** buffer,
-                               size_t* size,
-                               uint32_t* rkey) {
+  virtual void QueryRecvBuffer(uint64_t key, int node_id, void **buffer,
+                               size_t *size, uint32_t *rkey) {
     PS_CHECK(false) << "recv buffer registration is not supported";
   }
 

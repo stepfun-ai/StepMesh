@@ -3,13 +3,13 @@
  *  Modifications Copyright (C) by StepAI Contributors. 2025.
  */
 #ifndef PS_INTERNAL_POSTOFFICE_H_
-#define  PS_INTERNAL_POSTOFFICE_H_
+#define PS_INTERNAL_POSTOFFICE_H_
 #include <algorithm>
-#include <mutex>
 #include <memory>
-#include <vector>
-#include <unordered_map>
+#include <mutex>
 #include <string>
+#include <unordered_map>
+#include <vector>
 
 #include "ps/internal/customer.h"
 #include "ps/internal/env.h"

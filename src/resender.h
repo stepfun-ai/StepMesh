@@ -120,9 +120,9 @@ class Resender {
           resend.push_back(it.second.msg);
           ++it.second.num_retry;
           PS_LOG(WARNING) << van_->my_node().ShortDebugString()
-                       << ": Timeout to get the ACK message. Resend (retry="
-                       << it.second.num_retry << ") "
-                       << it.second.msg.DebugString();
+                          << ": Timeout to get the ACK message. Resend (retry="
+                          << it.second.num_retry << ") "
+                          << it.second.msg.DebugString();
           PS_CHECK_LT(it.second.num_retry, max_num_retry_);
         }
       }

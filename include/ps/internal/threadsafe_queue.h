@@ -3,16 +3,16 @@
  *  Modifications Copyright (C) by StepAI Contributors. 2025.
  */
 #ifndef PS_INTERNAL_THREADSAFE_QUEUE_H_
-#define  PS_INTERNAL_THREADSAFE_QUEUE_H_
+#define PS_INTERNAL_THREADSAFE_QUEUE_H_
 #include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <queue>
 #include <utility>
 
+#include "ps/base.h"
 #include "ps/internal/env.h"
 #include "ps/internal/spsc_queue.h"
-#include "ps/base.h"
 
 namespace ps {
 

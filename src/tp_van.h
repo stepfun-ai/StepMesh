@@ -5,27 +5,29 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string>
-#include <memory>
-#include <future>
+#include <tensorpipe/tensorpipe.h>
+
 #include <chrono>
+#include <future>
+#include <memory>
+#include <string>
 #include <thread>
 #include <unordered_map>
-#include <tensorpipe/tensorpipe.h>
-#include "ps/internal/van.h"
-#include "ps/internal/threadsafe_queue.h"
 
+#include "ps/internal/threadsafe_queue.h"
+#include "ps/internal/van.h"
 
 namespace ps {
 /**
  * \brief TensorPipe based implementation,
  *   mostly adapted from the RPC implementation of PyTorch and DGL.
- *   Ref: https://github.com/pytorch/pytorch/tree/master/torch/csrc/distributed/rpc 
+ *   Ref:
+ * https://github.com/pytorch/pytorch/tree/master/torch/csrc/distributed/rpc
  *        https://github.com/dmlc/dgl/tree/master/src/rpc
  */
 class TPVan : public Van {
  public:
-  TPVan(Postoffice* postoffice) : Van(postoffice) {}
+  TPVan(Postoffice *postoffice) : Van(postoffice) {}
   virtual ~TPVan() {}
   virtual std::string GetType() const { return std::string("tensorpipe"); }
 
@@ -61,12 +63,13 @@ class TPVan : public Van {
     }
   }
 
-  int Bind(Node& node, int max_retry) override {
+  int Bind(Node &node, int max_retry) override {
     PS_CHECK(!node.hostname.empty()) << "Empty hostname";
     PS_CHECK(!send_ctx_ && !recv_ctx_);
     send_ctx_ = InitContext(node);
     recv_ctx_ = InitContext(node);
-    std::string addr = "tcp://" + node.hostname + ":" + std::to_string(node.port);
+    std::string addr =
+        "tcp://" + node.hostname + ":" + std::to_string(node.port);
     auto use_recv_ctx = Environment::Get()->find("DMLC_USE_RECVCTX");
     if (use_recv_ctx) {
       recv_ctx_ = InitContext(node);
@@ -74,13 +77,14 @@ class TPVan : public Van {
     } else {
       listener_ = send_ctx_->listen({addr});
     }
-    listener_->accept([this](const tensorpipe::Error &error, std::shared_ptr<tensorpipe::Pipe> pipe) {
+    listener_->accept([this](const tensorpipe::Error &error,
+                             std::shared_ptr<tensorpipe::Pipe> pipe) {
       OnAccepted(error, pipe);
     });
     return node.port;
   }
 
-  void Connect(const Node& node) override {
+  void Connect(const Node &node) override {
     PS_CHECK_NE(node.id, Node::kEmpty);
     PS_CHECK_NE(node.port, Node::kEmpty);
     PS_CHECK(node.hostname.size());
@@ -93,7 +97,8 @@ class TPVan : public Van {
       return;
     }
     // connect
-    std::string addr = "tcp://" + node.hostname + ":" + std::to_string(node.port);
+    std::string addr =
+        "tcp://" + node.hostname + ":" + std::to_string(node.port);
     bool connected = false;
     while (!connected) {
       std::shared_ptr<tensorpipe::Pipe> pipe = send_ctx_->connect(addr);
@@ -113,7 +118,7 @@ class TPVan : public Van {
     return;
   }
 
-  int SendMsg(Message& msg) override {
+  int SendMsg(Message &msg) override {
     std::lock_guard<std::mutex> lk(mu_);
     int recv_id = msg.meta.recver;
     PS_CHECK_NE(recv_id, Node::kEmpty);
@@ -125,7 +130,8 @@ class TPVan : public Van {
     // send meta
     tensorpipe::Message tp_msg;
     tp_msg.metadata.append(reinterpret_cast<char *>(&my_node_.id), sizeof(int));
-    int meta_size; char* meta_buf = nullptr;
+    int meta_size;
+    char *meta_buf = nullptr;
     PackMeta(msg.meta, &meta_buf, &meta_size);
     tp_msg.metadata.append(reinterpret_cast<char *>(&meta_size), sizeof(int));
     tp_msg.metadata.append(meta_buf, meta_size);
@@ -133,13 +139,14 @@ class TPVan : public Van {
     int data_size = msg.data.size();
     tp_msg.metadata.append(reinterpret_cast<char *>(&data_size), sizeof(int));
     int send_bytes = tp_msg.metadata.size();
-    auto sarray_holder = std::make_shared<std::vector<SArray<char> > >();
+    auto sarray_holder = std::make_shared<std::vector<SArray<char>>>();
     if (data_size) {
       int small_data_size = 0;
       for (int i = 0; i < msg.data.size(); i++) {
         if (msg.data[i].size() <= 16) small_data_size += 1;
       }
-      tp_msg.metadata.append(reinterpret_cast<char *>(&small_data_size), sizeof(int));
+      tp_msg.metadata.append(reinterpret_cast<char *>(&small_data_size),
+                             sizeof(int));
       for (int i = 0; i < msg.data.size(); i++) {
         auto sarray = msg.data[i];
         sarray_holder->push_back(sarray);
@@ -152,10 +159,8 @@ class TPVan : public Van {
         }
         tensorpipe::CpuBuffer cpu_buffer;
         cpu_buffer.ptr = static_cast<void *>(sarray.data());
-        tensorpipe::Message::Tensor tensor{
-          .buffer=cpu_buffer,
-          .length=sarray.size()
-        };
+        tensorpipe::Message::Tensor tensor{.buffer = cpu_buffer,
+                                           .length = sarray.size()};
         tp_msg.tensors.push_back(tensor);
         send_bytes += sarray.size();
       }
@@ -170,14 +175,14 @@ class TPVan : public Van {
     return send_bytes;
   }
 
-  int RecvMsg(Message* msg) override {
+  int RecvMsg(Message *msg) override {
     queue_->WaitAndPop(msg);
     return msg->meta.data_size;
   }
 
  private:
-  
-  void OnAccepted(const tensorpipe::Error &error, std::shared_ptr<tensorpipe::Pipe> pipe) {
+  void OnAccepted(const tensorpipe::Error &error,
+                  std::shared_ptr<tensorpipe::Pipe> pipe) {
     if (error) {
       if (error.isOfType<tensorpipe::ListenerClosedError>()) {
         // Expected.
@@ -188,11 +193,13 @@ class TPVan : public Van {
       return;
     }
     // Accept the next connection request
-    listener_->accept([this](const tensorpipe::Error &error, std::shared_ptr<tensorpipe::Pipe> pipe) {
+    listener_->accept([this](const tensorpipe::Error &error,
+                             std::shared_ptr<tensorpipe::Pipe> pipe) {
       OnAccepted(error, pipe);
     });
 
-    pipe->readDescriptor([pipe, this](const tensorpipe::Error &error, tensorpipe::Descriptor descriptor) {
+    pipe->readDescriptor([pipe, this](const tensorpipe::Error &error,
+                                      tensorpipe::Descriptor descriptor) {
       if (error) {
         if (error.isOfType<tensorpipe::PipeClosedError>()) {
           // Expected.
@@ -232,10 +239,8 @@ class TPVan : public Van {
           allocation.tensors[i].buffer = cpu_buffer;
         }
       }
-      pipe->read(allocation, [allocation,
-                              descriptor = std::move(descriptor),
-                              pipe,
-                              this](const tensorpipe::Error &error) {
+      pipe->read(allocation, [allocation, descriptor = std::move(descriptor),
+                              pipe, this](const tensorpipe::Error &error) {
         if (error) {
           // EOF error is expected
           PS_VLOG(1) << "An error when reading from a pipe: " << error.what();
@@ -244,19 +249,26 @@ class TPVan : public Van {
         Message msg;
         msg.meta.recver = my_node_.id;
         char *ptr = const_cast<char *>(descriptor.metadata.data());
-        msg.meta.sender = *reinterpret_cast<int *>(ptr); ptr += sizeof(int);
-        int meta_size = *reinterpret_cast<int *>(ptr); ptr += sizeof(int);
-        UnpackMeta(ptr, meta_size, &(msg.meta)); ptr += meta_size;
-        int data_size = *reinterpret_cast<int *>(ptr); ptr += sizeof(int);
+        msg.meta.sender = *reinterpret_cast<int *>(ptr);
+        ptr += sizeof(int);
+        int meta_size = *reinterpret_cast<int *>(ptr);
+        ptr += sizeof(int);
+        UnpackMeta(ptr, meta_size, &(msg.meta));
+        ptr += meta_size;
+        int data_size = *reinterpret_cast<int *>(ptr);
+        ptr += sizeof(int);
         if (data_size > 0) {
           msg.data.resize(data_size);
-          int small_data_size = *reinterpret_cast<int *>(ptr); ptr += sizeof(int);
+          int small_data_size = *reinterpret_cast<int *>(ptr);
+          ptr += sizeof(int);
           PS_CHECK_EQ(small_data_size + descriptor.tensors.size(), data_size);
           std::vector<bool> is_small(data_size, false);
           // fill small tensors
           for (int i = 0; i < small_data_size; i++) {
-            int idx = *reinterpret_cast<int *>(ptr); ptr += sizeof(int);
-            int size = *reinterpret_cast<int *>(ptr); ptr += sizeof(int);
+            int idx = *reinterpret_cast<int *>(ptr);
+            ptr += sizeof(int);
+            int size = *reinterpret_cast<int *>(ptr);
+            ptr += sizeof(int);
             SArray<char> data;
             if (size) data.CopyFrom(ptr, size);
             ptr += size;
@@ -267,13 +279,15 @@ class TPVan : public Van {
           int idx = 0;
           for (int i = 0; i < data_size; i++) {
             if (is_small[i]) continue;
-            void *buf = allocation.tensors[idx].buffer.unwrap<tensorpipe::CpuBuffer>().ptr;
+            void *buf = allocation.tensors[idx]
+                            .buffer.unwrap<tensorpipe::CpuBuffer>()
+                            .ptr;
             SArray<char> data;
-            data.reset(static_cast<char *>(buf),
-                       descriptor.tensors[idx].length,
-                       [](char* data_ptr) { delete[] data_ptr; },
-                       msg.meta.src_dev_type, msg.meta.src_dev_id,
-                       msg.meta.dst_dev_type, msg.meta.dst_dev_id);
+            data.reset(
+                static_cast<char *>(buf), descriptor.tensors[idx].length,
+                [](char *data_ptr) { delete[] data_ptr; },
+                msg.meta.src_dev_type, msg.meta.src_dev_id,
+                msg.meta.dst_dev_type, msg.meta.dst_dev_id);
             msg.data[i] = data;
             idx++;
           }
@@ -284,7 +298,7 @@ class TPVan : public Van {
     });
   }
 
-  std::shared_ptr<tensorpipe::Context> InitContext(Node& node) {
+  std::shared_ptr<tensorpipe::Context> InitContext(Node &node) {
     auto context = std::make_shared<tensorpipe::Context>();
     auto transportContext = tensorpipe::transport::uv::create();
     context->registerTransport(0, "tcp", transportContext);
@@ -313,7 +327,6 @@ class TPVan : public Van {
     return context;
   }
 
-
   std::shared_ptr<tensorpipe::Context> send_ctx_{nullptr};
 
   std::shared_ptr<tensorpipe::Context> recv_ctx_{nullptr};
@@ -328,5 +341,5 @@ class TPVan : public Van {
 };
 }  // namespace ps
 
-#endif // DMLC_USE_TP
+#endif  // DMLC_USE_TP
 #endif  // PS_TP_VAN_H_

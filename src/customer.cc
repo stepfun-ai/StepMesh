@@ -3,17 +3,18 @@
  *  Modifications Copyright (C) by StepAI Contributors. 2025.
  */
 
+#include "ps/internal/customer.h"
+
 #include <emmintrin.h>
 
-#include <limits>
-#include <utility>
 #include <atomic>
 #include <fstream>
+#include <limits>
 #include <list>
+#include <utility>
 
 #include "ps/internal/postoffice.h"
 #include "ps/internal/threadsafe_queue.h"
-#include "ps/internal/customer.h"
 
 namespace ps {
 
@@ -31,9 +32,7 @@ Customer::Customer(int app_id, int customer_id,
   postoffice_->AddCustomer(this);
 }
 
-Customer::~Customer() {
-  postoffice_->RemoveCustomer(this);
-}
+Customer::~Customer() { postoffice_->RemoveCustomer(this); }
 
 int Customer::NewRequest(int recver) {
   PS_CHECK(recver == kServerGroup) << recver;
@@ -51,10 +50,10 @@ int Customer::NewRequest(int recver) {
 void Customer::WaitRequest(int timestamp) {
   auto* req = tracker_[timestamp];
   int spin_count = 0;
-  while (req->count.load(std::memory_order_acquire)
-         != req->response_count.load(std::memory_order_acquire)) {
+  while (req->count.load(std::memory_order_acquire) !=
+         req->response_count.load(std::memory_order_acquire)) {
     if (spin_count < kMaxSpinCount) {
-     spin_count++;
+      spin_count++;
     } else {
       _mm_pause();
     }

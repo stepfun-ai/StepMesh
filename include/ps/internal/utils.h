@@ -3,20 +3,19 @@
  *  Modifications Copyright (C) by StepAI Contributors. 2025.
  */
 #ifndef PS_INTERNAL_UTILS_H_
-#define  PS_INTERNAL_UTILS_H_
+#define PS_INTERNAL_UTILS_H_
 
-#include <stdlib.h>
+#include <ctype.h>
+#include <pthread.h>
+#include <sched.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
-#include <sched.h>
-#include <ctype.h>
-#include <string.h>
-#include <pthread.h>
-
 #include <chrono>
-#include <thread>
 #include <iostream>
+#include <thread>
 
 #include "dmlc/logging.h"
 #include "ps/internal/env.h"
@@ -74,14 +73,14 @@ inline int GetEnv(const char *key, int default_val) {
  */
 inline static uint64_t _GetCurrentCycle() {
   uint64_t cycle = 0;
-  uint32_t* t = reinterpret_cast<uint32_t*>(&cycle);
-  __asm__ volatile ("rdtsc" : "=a" (t[0]), "=d" (t[1]));
+  uint32_t *t = reinterpret_cast<uint32_t *>(&cycle);
+  __asm__ volatile("rdtsc" : "=a"(t[0]), "=d"(t[1]));
   return cycle;
 }
 
 /*
  * Get the current nanosecond count. Only for initialization.
-*/
+ */
 static inline uint64_t _GetNanosecond() {
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -93,13 +92,13 @@ static inline uint64_t _GetNanosecond() {
  * Convert cycle count to 32 * nanosecond count.
  */
 static uint64_t CycleToNs() {
-    uint64_t start_ns = _GetNanosecond();
-    uint64_t start_cycle = _GetCurrentCycle();
-    std::this_thread::sleep_for(std::chrono::milliseconds(3));
-    uint64_t stop_ns = _GetNanosecond();
-    uint64_t stop_cycle = _GetCurrentCycle();
-    return static_cast<uint64_t>(
-        ((stop_cycle - start_cycle) << 5) / (stop_ns - start_ns));
+  uint64_t start_ns = _GetNanosecond();
+  uint64_t start_cycle = _GetCurrentCycle();
+  std::this_thread::sleep_for(std::chrono::milliseconds(3));
+  uint64_t stop_ns = _GetNanosecond();
+  uint64_t stop_cycle = _GetCurrentCycle();
+  return static_cast<uint64_t>(((stop_cycle - start_cycle) << 5) /
+                               (stop_ns - start_ns));
 }
 
 /*
@@ -107,10 +106,9 @@ static uint64_t CycleToNs() {
  */
 static uint64_t norm = CycleToNs();
 
-
 /*!
-  * \brief Get the current nanocount.
-*/
+ * \brief Get the current nanocount.
+ */
 static inline uint64_t GetNanosecond() {
 #ifdef STEPMESH_ENABLE_TRACE
   if (norm == 0) {
@@ -144,13 +142,18 @@ static inline void BindCpuCore(int offset, int core_count = 1) {
   int cores_per_socket = 48;
   int start_offset = 10;
 
-  Environment::Get()->find("STEPMESH_CPU_CORES_PER_SOCKET", &cores_per_socket, cores_per_socket);
-  Environment::Get()->find("STEPMESH_CPU_CORES_PER_GPU", &cores_per_gpu, cores_per_gpu);
-  Environment::Get()->find("STEPMESH_CPU_START_OFFSET", &start_offset, start_offset);
+  Environment::Get()->find("STEPMESH_CPU_CORES_PER_SOCKET", &cores_per_socket,
+                           cores_per_socket);
+  Environment::Get()->find("STEPMESH_CPU_CORES_PER_GPU", &cores_per_gpu,
+                           cores_per_gpu);
+  Environment::Get()->find("STEPMESH_CPU_START_OFFSET", &start_offset,
+                           start_offset);
 
-  if(offset >= cores_per_gpu){
+  if (offset >= cores_per_gpu) {
     offset = cores_per_gpu - 1;
-    std::cout << "Bind Core idx is larger than cores count for each GPU, reset idx as " << offset;
+    std::cout << "Bind Core idx is larger than cores count for each GPU, reset "
+                 "idx as "
+              << offset;
   }
   int basic_core_id = gpu * cores_per_gpu + start_offset + offset;
   if (gpu < 2) {
@@ -170,11 +173,11 @@ static inline void BindCpuCore(int offset, int core_count = 1) {
   }
 
   if (sched_setaffinity(0, sizeof(cpu_set_t), &mask) == -1) {
-    std::cerr << "could not set CPU affinity: gpu " << gpu
-                    << "-> cpu" << cpu_core << std::endl;
+    std::cerr << "could not set CPU affinity: gpu " << gpu << "-> cpu"
+              << cpu_core << std::endl;
   } else if (PS_VERBOSE >= 1) {
-    std::cout << "BindToCpuCore: gpu " << gpu
-                 << " -> cpu " << cpu_core << std::endl;
+    std::cout << "BindToCpuCore: gpu " << gpu << " -> cpu " << cpu_core
+              << std::endl;
   }
 }
 

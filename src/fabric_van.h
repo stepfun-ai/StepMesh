@@ -94,7 +94,7 @@ class FabricVan : public Van {
     struct fi_info *providers = info_;
     while (providers) {
       PS_LOG(INFO) << "Found a fabric provider "
-                << providers->fabric_attr->prov_name;
+                   << providers->fabric_attr->prov_name;
       providers = providers->next;
     }
   }
@@ -420,9 +420,11 @@ class FabricVan : public Van {
     if (ret == FI_EADDRNOTAVAIL) {
       PS_LOG(WARNING) << "fi_cq_readerr: FI_EADDRNOTAVAIL";
     } else if (ret < 0) {
-      PS_LOG(FATAL) << "fi_cq_readerr failed. Return Code: " << ret << ". ERROR: "
-                 << fi_cq_strerror(cq, err_entry.prov_errno, err_entry.err_data,
-                                   nullptr, err_entry.err_data_size);
+      PS_LOG(FATAL) << "fi_cq_readerr failed. Return Code: " << ret
+                    << ". ERROR: "
+                    << fi_cq_strerror(cq, err_entry.prov_errno,
+                                      err_entry.err_data, nullptr,
+                                      err_entry.err_data_size);
     } else {
       check_err(-err_entry.err, "fi_cq_read failed. retrieved error: ");
     }

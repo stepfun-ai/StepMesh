@@ -15,22 +15,22 @@
 // =============================================================================
 
 #ifndef RDMA_TRANSPORT_H_
-#define  RDMA_TRANSPORT_H_
+#define RDMA_TRANSPORT_H_
 
 #ifdef DMLC_USE_RDMA
 
-#include <cstddef>
-#include <mutex>
 #include <condition_variable>
-#include <string>
-#include <vector>
+#include <cstddef>
 #include <memory>
+#include <mutex>
+#include <string>
 #include <unordered_map>
+#include <vector>
 
+#include "./ibvwarp.h"
+#include "./rdma_utils.h"
 #include "dmlc/logging.h"
 #include "ps/internal/multi_qp.h"
-#include "./rdma_utils.h"
-#include "./ibvwarp.h"
 
 namespace ps {
 
@@ -46,7 +46,7 @@ struct Endpoint {
   std::condition_variable cv;
   std::mutex connect_mu;
   struct rdma_cm_id *cm_ids[QP_MAX_NUM];
-  struct rdma_cm_id* master_id;
+  struct rdma_cm_id *master_id;
   std::shared_ptr<Transport> trans;
   bool multi_qp_ = false;
 
@@ -75,8 +75,8 @@ struct Endpoint {
     auto byteps_rx_depth = Environment::Get()->find("BYTEPS_RDMA_RX_DEPTH");
     auto byteps_start_depth =
         Environment::Get()->find("BYTEPS_RDMA_START_DEPTH");
-    const char *role_val = PS_CHECK_NOTNULL(
-        Environment::Get()->find("DMLC_ROLE"));
+    const char *role_val =
+        PS_CHECK_NOTNULL(Environment::Get()->find("DMLC_ROLE"));
     std::string role_str(role_val);
     // for joint mode with large number of workers, the default value of rx/tx
     // depth is reduced for less memory consumption.
@@ -158,10 +158,11 @@ struct Endpoint {
       aligned_malloc(reinterpret_cast<void **>(&buf), kMempoolChunkSize);
       PS_CHECK(buf);
       struct ibv_mr *mr = ibv_reg_mr(pd, buf, kMempoolChunkSize, 0);
-      PS_CHECK(mr) << "ibv_reg_mr failed: " << strerror(errno)
-                << "\nYou can try to reduce BYTEPS_RDMA_START_DEPTH (current "
-                << kStartDepth << ") or BYTEPS_RDMA_RX_DEPTH (current "
-                << kRxDepth << ").";
+      PS_CHECK(mr)
+          << "ibv_reg_mr failed: " << strerror(errno)
+          << "\nYou can try to reduce BYTEPS_RDMA_START_DEPTH (current "
+          << kStartDepth << ") or BYTEPS_RDMA_RX_DEPTH (current " << kRxDepth
+          << ").";
 
       ctx[i].type = type;
       ctx[i].buffer = mr;
@@ -186,9 +187,8 @@ struct Endpoint {
         << "Create RDMA queue pair failed: " << strerror(errno);
     id->pd = pd;
 
-    PS_LOG(TRACE) << "qp created: pd="<< pd
-                  <<  " , cq=" << cq
-                  << ", qp=" <<  id->qp->qp_num;
+    PS_LOG(TRACE) << "qp created: pd=" << pd << " , cq=" << cq
+                  << ", qp=" << id->qp->qp_num;
     if (inited == 0) {
       InitSendContextHelper(pd, start_ctx, &free_start_ctx, kStartDepth,
                             kRendezvousStartContext);
@@ -196,7 +196,7 @@ struct Endpoint {
                             kRendezvousReplyContext);
     }
 
-    for (int i = 0; i < kRxDepth ; ++i) {
+    for (int i = 0; i < kRxDepth; ++i) {
       if (inited == 0) {
         void *buf;
         aligned_malloc(reinterpret_cast<void **>(&buf), kMempoolChunkSize);
@@ -213,7 +213,7 @@ struct Endpoint {
         rx_ctx[i].private_data = this;
       }
     }
-    for (int i = 0 ; i < kRxDepth / QP_NUM; ++i) {
+    for (int i = 0; i < kRxDepth / QP_NUM; ++i) {
       if (inited < QP_NUM) {
         PostRecv(&rx_ctx[i + inited * QP_NUM], id);
       }
@@ -228,7 +228,7 @@ struct Endpoint {
     if (val == 1) {
       multi_qp_ = true;
       FOR_QPS {
-        int lag = 1 + qpIndex%2;
+        int lag = 1 + qpIndex % 2;
         int ret = wrap_mlx5dv_modify_qp_lag_port(cm_ids[qpIndex]->qp, lag);
         if (ret != 1) {
           PS_LOG(INFO) << "Failed to mlx5dv_modify_qp_lag_port qp ["
@@ -236,18 +236,18 @@ struct Endpoint {
                        << ", qp type: " << cm_ids[qpIndex]->qp->qp_type;
         } else {
           uint8_t set_port = 0xff, act_port = 0xff;
-          wrap_mlx5dv_query_qp_lag_port(cm_ids[qpIndex]->qp,
-                                        &set_port, &act_port);
+          wrap_mlx5dv_query_qp_lag_port(cm_ids[qpIndex]->qp, &set_port,
+                                        &act_port);
           PS_LOG(INFO) << "QP LAG Port: QP: " << cm_ids[qpIndex]->qp->qp_num
-                     << ", Modify Port: " << lag
-                     << ", Set to Port: " << static_cast<int>(set_port)
-                     << ", Active Port: " << static_cast<int>(act_port);
+                       << ", Modify Port: " << lag
+                       << ", Set to Port: " << static_cast<int>(set_port)
+                       << ", Active Port: " << static_cast<int>(act_port);
         }
       }
     }
   }
 
-  void PostRecv(WRContext *ctx, rdma_cm_id* id) {
+  void PostRecv(WRContext *ctx, rdma_cm_id *id) {
     struct ibv_recv_wr wr, *bad_wr = nullptr;
     memset(&wr, 0, sizeof(wr));
 
@@ -271,7 +271,7 @@ class Transport {
   virtual void RDMAWriteWithImm(MessageBuffer *msg_buf, uint64_t remote_addr,
                                 uint32_t rkey, uint32_t idx,
                                 bool inline_write = false,
-                                struct ibv_send_wr* prev_wr = nullptr) = 0;
+                                struct ibv_send_wr *prev_wr = nullptr) = 0;
 
   virtual int RecvPushRequest(Message *msg, BufferContext *buffer_ctx,
                               int meta_len) = 0;
@@ -341,7 +341,7 @@ class RDMATransport : public Transport {
   virtual void RDMAWriteWithImm(MessageBuffer *msg_buf, uint64_t remote_addr,
                                 uint32_t rkey, uint32_t idx,
                                 bool inline_write = false,
-                                struct ibv_send_wr* prev_wr = nullptr) {
+                                struct ibv_send_wr *prev_wr = nullptr) {
     struct ibv_sge sge;
     sge.addr = reinterpret_cast<uint64_t>(msg_buf->inline_buf);
     sge.length = msg_buf->inline_len;
@@ -433,9 +433,9 @@ class RDMATransport : public Transport {
       if (data_len > 0) {
         // 2. Allocate GPU buffer for data
         size_t size = 0;
-        postoffice_->van()->QueryRecvBuffer(
-            req->key, this->endpoint_->node_id,
-            &buf_ctx->gpu_data_buffer, &size, &rkey);
+        postoffice_->van()->QueryRecvBuffer(req->key, this->endpoint_->node_id,
+                                            &buf_ctx->gpu_data_buffer, &size,
+                                            &rkey);
         if (buf_ctx->gpu_data_buffer == nullptr) {
           PS_LOG(INFO) << "Alloc new gpu buffer: key=" << req->key
                        << ", size=" << req->data_len[1];
@@ -457,8 +457,8 @@ class RDMATransport : public Transport {
 
       WRContext *reply_ctx_ptr = nullptr;
       endpoint_->free_reply_ctx.WaitAndPop(&reply_ctx_ptr);
-      auto *resp = reinterpret_cast<RendezvousReply*>(
-          reply_ctx_ptr->buffer->addr);
+      auto *resp =
+          reinterpret_cast<RendezvousReply *>(reply_ctx_ptr->buffer->addr);
 
       // Populate reply with addresses and rkeys for both buffers
       resp->meta_addr = reinterpret_cast<uint64_t>(buf_ctx->meta_buffer);
@@ -501,17 +501,17 @@ class RDMATransport : public Transport {
 #endif  // STEPMESH_USE_GDR
 
     // Original logic for non-GDR or for client-side GDR (only receives meta)
-    size_t buffer_size =
-        is_server_ ? (align_ceil(req->meta_len, pagesize_) + data_len)
-                   : req->meta_len;
-    char* buffer = allocator_->Alloc(buffer_size);
+    size_t buffer_size = is_server_
+                             ? (align_ceil(req->meta_len, pagesize_) + data_len)
+                             : req->meta_len;
+    char *buffer = allocator_->Alloc(buffer_size);
     PS_CHECK(buffer);
     buf_ctx->buffer = buffer;
 
     WRContext *reply_ctx_ptr = nullptr;
     endpoint_->free_reply_ctx.WaitAndPop(&reply_ctx_ptr);
-    RendezvousReply *resp = reinterpret_cast<RendezvousReply*>(
-        reply_ctx_ptr->buffer->addr);
+    RendezvousReply *resp =
+        reinterpret_cast<RendezvousReply *>(reply_ctx_ptr->buffer->addr);
 
     // In GDR mode, client still uses single buffer logic,
     // so we populate the single addr/rkey
@@ -575,7 +575,7 @@ class RDMATransport : public Transport {
     auto meta_raddr = std::get<0>(remote_tuple);
     auto meta_rkey = std::get<1>(remote_tuple);
     auto idx = std::get<2>(remote_tuple);
-    auto data_raddr = meta_raddr +  align_ceil(msg_buf->inline_len, pagesize_);
+    auto data_raddr = meta_raddr + align_ceil(msg_buf->inline_len, pagesize_);
     auto data_rkey = meta_rkey;
 #endif
 
@@ -600,17 +600,17 @@ class RDMATransport : public Transport {
       data_sge.length = chunk_size + msg.data[1].size() % QP_NUM;
 
       // QP 0 Meta
-      RawMeta *meta = reinterpret_cast<RawMeta*>(msg_buf->inline_buf);
+      RawMeta *meta = reinterpret_cast<RawMeta *>(msg_buf->inline_buf);
       meta->slave_qp_num = QP_NUM - 1;
       FOR_QPS {
         endpoint_->qp_pkt_count[qpIndex]++;
         meta->slave_qp_counter[qpIndex] = endpoint_->qp_pkt_count[qpIndex];
         PS_LOG(ALL) << "Push Request, QP: "
-                   << endpoint_->cm_ids[qpIndex]->qp->qp_num << "Counter"
-                   << endpoint_->qp_pkt_count[qpIndex];
+                    << endpoint_->cm_ids[qpIndex]->qp->qp_num << "Counter"
+                    << endpoint_->qp_pkt_count[qpIndex];
       }
       PS_CHECK_EQ(ibv_post_send(endpoint_->cm_ids[0]->qp, &data_wr, &bad_wr), 0)
-            << "ibv_post_send failed.";
+          << "ibv_post_send failed.";
       RDMAWriteWithImm(msg_buf, meta_raddr, meta_rkey, idx, true, nullptr);
 
       data_wr.wr.rdma.remote_addr += data_sge.length;
@@ -685,17 +685,17 @@ class RDMATransport : public Transport {
     if (endpoint_->multi_qp_) {
       uint32_t chunk_size = data_len / QP_NUM;
       data_sge.length = chunk_size + data_len % QP_NUM;
-      RawMeta *meta = reinterpret_cast<RawMeta*>(msg_buf->inline_buf);
+      RawMeta *meta = reinterpret_cast<RawMeta *>(msg_buf->inline_buf);
       meta->slave_qp_num = QP_NUM - 1;
       FOR_QPS {
         endpoint_->qp_pkt_count[qpIndex]++;
         meta->slave_qp_counter[qpIndex] = endpoint_->qp_pkt_count[qpIndex];
-        PS_LOG(ALL)  << "Push Request, QP: "
-                   << endpoint_->cm_ids[qpIndex]->qp->qp_num << "Counter"
-                   << endpoint_->qp_pkt_count[qpIndex];
+        PS_LOG(ALL) << "Push Request, QP: "
+                    << endpoint_->cm_ids[qpIndex]->qp->qp_num << "Counter"
+                    << endpoint_->qp_pkt_count[qpIndex];
       }
       PS_CHECK_EQ(ibv_post_send(endpoint_->cm_ids[0]->qp, &data_wr, &bad_wr), 0)
-            << "ibv_post_send failed.";
+          << "ibv_post_send failed.";
       RDMAWriteWithImm(msg_buf, meta_raddr, meta_rkey, idx, true, nullptr);
 
       data_wr.wr.rdma.remote_addr += data_sge.length;
@@ -734,7 +734,7 @@ class RDMATransport : public Transport {
   virtual int RecvPushResponseFast(Message *msg, BufferContext *buffer_ctx,
                                    MessageBuffer *msg_buf) {
     PS_CHECK_EQ(buffer_ctx->data_num, 0);
-    RawMeta *raw = reinterpret_cast<RawMeta*>(msg_buf->inline_buf);
+    RawMeta *raw = reinterpret_cast<RawMeta *>(msg_buf->inline_buf);
     // restore timestamp from local buffer
     msg->meta.timestamp = raw->timestamp;
     return 0;
@@ -770,7 +770,7 @@ class RDMATransport : public Transport {
       uint32_t len = msg->meta.val_len;
       SArray<char> vals;
 
-      vals.reset(reinterpret_cast<char *>(cur_data), len, [](void*){});
+      vals.reset(reinterpret_cast<char *>(cur_data), len, [](void *){});
 
       SArray<char> lens =
           CreateFunctionalSarray(&msg->meta.val_len, sizeof(int));
@@ -785,8 +785,8 @@ class RDMATransport : public Transport {
 
     // Original non-GDR or client-side logic
     PS_CHECK_EQ(buffer_ctx->data_num, 3);
-    char *cur = buffer_ctx->buffer
-                + align_ceil(static_cast<size_t>(meta_len), pagesize_);
+    char *cur = buffer_ctx->buffer +
+                align_ceil(static_cast<size_t>(meta_len), pagesize_);
 
     SArray<char> keys = CreateFunctionalSarray(&msg->meta.key, sizeof(Key));
     SArray<char> lens = CreateFunctionalSarray(&msg->meta.val_len, sizeof(int));
@@ -820,8 +820,8 @@ class RDMATransport : public Transport {
   }
 
   virtual int RecvPullResponseFast(Message *msg, BufferContext *buffer_ctx,
-                               int meta_len, MessageBuffer *msg_buf) {
-    RawMeta *raw = reinterpret_cast<RawMeta*>(msg_buf->inline_buf);
+                                   int meta_len, MessageBuffer *msg_buf) {
+    RawMeta *raw = reinterpret_cast<RawMeta *>(msg_buf->inline_buf);
     // restore timestamp from local buffer
     msg->meta.timestamp = raw->timestamp;
     return RecvPullResponse(msg, buffer_ctx, meta_len);
@@ -831,7 +831,7 @@ class RDMATransport : public Transport {
     SArray<char> sarr;
     void *p = malloc(size);
     memcpy(p, value, size);
-    sarr.reset(reinterpret_cast<char*>(p), size, [p](void *) { free(p); });
+    sarr.reset(reinterpret_cast<char *>(p), size, [p](void *) { free(p); });
     return sarr;
   }
 
@@ -915,9 +915,9 @@ class IPCTransport : public RDMATransport {
 
   void SendPullResponse(Message &msg, MessageBuffer *msg_buf,
                         RemoteTuple remote_tuple, size_t lkey) {
-    auto addr = reinterpret_cast<void*>(PS_CHECK_NOTNULL(msg.data[1].data()));
-    void *shm_addr = PS_CHECK_NOTNULL(
-        GetSharedMemory(shm_prefix_, msg.meta.key));
+    auto addr = reinterpret_cast<void *>(PS_CHECK_NOTNULL(msg.data[1].data()));
+    void *shm_addr =
+        PS_CHECK_NOTNULL(GetSharedMemory(shm_prefix_, msg.meta.key));
 
     if (enable_async_copy_) {
       // async copy with a simple load-balancing strategy
@@ -1008,8 +1008,8 @@ class IPCTransport : public RDMATransport {
     auto base_key = worker_key - seq_num;
     uint64_t offset = byteps_partition_bytes_ * seq_num;
     if (key_shm_addr_.find(base_key) != key_shm_addr_.end()) {
-      return reinterpret_cast<void*>(
-          reinterpret_cast<char*>(key_shm_addr_[base_key]) + offset);
+      return reinterpret_cast<void *>(
+          reinterpret_cast<char *>(key_shm_addr_[base_key]) + offset);
     }
     std::string shm_name(prefix);
     std::stringstream stream;
@@ -1018,7 +1018,7 @@ class IPCTransport : public RDMATransport {
     shm_name += stream.str();
     int shm_fd = shm_open(shm_name.c_str(), O_RDWR, 0666);
     PS_CHECK_GE(shm_fd, 0) << "shm_open failed for " << shm_name << ", "
-                        << strerror(errno);
+                           << strerror(errno);
 
     struct stat sb;
     PS_CHECK_EQ(0, fstat(shm_fd, &sb)) << strerror(errno);
@@ -1031,7 +1031,7 @@ class IPCTransport : public RDMATransport {
 
     PS_VLOG(1) << "open Shared Memory: " << shm_name << " offset=" << offset
                << " (in bytes) size=" << total_shm_size;
-    return reinterpret_cast<void*>(
+    return reinterpret_cast<void *>(
         reinterpret_cast<char *>(key_shm_addr_[base_key]) + offset);
   }
 
