@@ -20,12 +20,12 @@
 
 namespace ps {
 
-#define check_err(ret, msg)                           \
-  do {                                                \
-    if (ret != 0) {                                   \
+#define check_err(ret, msg)                              \
+  do {                                                   \
+    if (ret != 0) {                                      \
       PS_LOG(FATAL) << msg << ". Return Code: " << ret   \
-                 << ". ERROR: " << fi_strerror(-ret); \
-    }                                                 \
+                    << ". ERROR: " << fi_strerror(-ret); \
+    }                                                    \
   } while (false)
 
 static const uint64_t kRendezvousStartMask = 0x8000000000000000ULL;

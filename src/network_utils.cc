@@ -2,11 +2,11 @@
  *  Copyright (C) 2025 by StepAI Contributors
  */
 
-#include <sstream>
-#include <cstdio>
-#include <string>
-
 #include "network_utils.h"  // NOLINT
+
+#include <cstdio>
+#include <sstream>
+#include <string>
 
 namespace ps {
 
@@ -99,12 +99,10 @@ int NetDev::get_best_gid(ibv_gid* gid, int* gid_idx) {
   return 0;
 }
 
-
 std::string NetDev::get_ip() {
   std::stringstream ip;
-  ip << static_cast<int>(gid_.raw[12]) << "."
-     << static_cast<int>(gid_.raw[13]) << "."
-     << static_cast<int>(gid_.raw[14]) << "."
+  ip << static_cast<int>(gid_.raw[12]) << "." << static_cast<int>(gid_.raw[13])
+     << "." << static_cast<int>(gid_.raw[14]) << "."
      << static_cast<int>(gid_.raw[15]);
   return ip.str();
 }
@@ -117,8 +115,7 @@ std::string NetDev::get_interface_name() {
   auto ip = get_ip();
   std::string name = "";
   for (intf = interfaces; intf && found < 32; intf = intf->ifa_next) {
-    if (intf->ifa_addr == NULL)
-      continue;
+    if (intf->ifa_addr == NULL) continue;
 
     /* We only support IPv4 & IPv6 */
     int family = intf->ifa_addr->sa_family;

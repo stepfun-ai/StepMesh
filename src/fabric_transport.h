@@ -225,7 +225,7 @@ struct FabricEndpoint {
     int ret = fi_av_insert(fabric_ctx->av, peer_ep_name.name, 1, &peer_addr, 0,
                            nullptr);
     PS_CHECK_EQ(ret, 1) << "Call to fi_av_insert() failed. Return Code: " << ret
-                     << ". ERROR: " << fi_strerror(-ret);
+                        << ". ERROR: " << fi_strerror(-ret);
     // fi_av_straddr: human readable name
     FabricAddr readable_addr;
     fi_av_straddr(fabric_ctx->av, peer_ep_name.name, readable_addr.name,

@@ -15,7 +15,7 @@
 // =============================================================================
 
 #ifndef RDMA_UTILS_H_
-#define  RDMA_UTILS_H_
+#define RDMA_UTILS_H_
 
 #ifdef DMLC_USE_RDMA
 
@@ -23,6 +23,7 @@
 #include <fcntl.h>
 #include <netdb.h>
 #include <poll.h>
+#include <rdma/rdma_cma.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,7 +32,6 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include <rdma/rdma_cma.h>
 
 #ifdef DMLC_USE_CUDA
 #include <cuda_runtime.h>
@@ -39,6 +39,7 @@
 
 #include <algorithm>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <queue>
 #include <set>
@@ -47,11 +48,10 @@
 #include <tuple>
 #include <unordered_map>
 #include <vector>
-#include <memory>
 
+#include "./van_common.h"
 #include "ps/internal/threadsafe_queue.h"
 #include "ps/internal/van.h"
-#include "./van_common.h"
 
 namespace ps {
 
@@ -66,7 +66,7 @@ static const int kMaxHostnameLength = 16;
 // should have the same prefix with BytePS shared memory
 // for pcie reduce:  BytePS_Pcie_{pcie_id}_ShM_{JOB_ID}_{BYTEPS_KEY}
 // otherwise:        BytePS_ShM_{JOB_ID}_{BYTEPS_KEY}
-static const std::string kShmPrefix("BytePS_ShM_");  // NOLINT
+static const std::string kShmPrefix("BytePS_ShM_");       // NOLINT
 static const std::string kShmPciePrefix("BytePS_Pcie_");  // NOLINT
 
 enum WRContextType {
@@ -142,22 +142,22 @@ class MemoryAllocator {
 
 class BackendMemoryAllocator {
  public:
-  explicit BackendMemoryAllocator(struct ibv_pd* pd, int gpu_id)
+  explicit BackendMemoryAllocator(struct ibv_pd *pd, int gpu_id)
       : pd_(pd), associated_gpu_id_(gpu_id) {
     PS_CHECK(pd_) << "Protection Domain (pd_) is null.";
     PS_LOG(INFO) << "Initialized BackendMemoryAllocator for GPU " << gpu_id
-              << " with pd " << pd_;
+                 << " with pd " << pd_;
   }
 
   ~BackendMemoryAllocator() {
     std::lock_guard<std::mutex> lock(mu_);
-    for (auto const& it : key_to_mr_) {
+    for (auto const &it : key_to_mr_) {
       auto mr = it.second;
       if (mr) {
         if (ibv_dereg_mr(mr) != 0) {
           PS_LOG(WARNING) << "ibv_dereg_mr failed for GPU MR " << mr->handle
-                       << " on GPU " << associated_gpu_id_ << ": "
-                       << strerror(errno);
+                          << " on GPU " << associated_gpu_id_ << ": "
+                          << strerror(errno);
         }
         if (mr->addr) {
           Backend::Get()->Free(mr->addr);
@@ -167,7 +167,7 @@ class BackendMemoryAllocator {
     key_to_mr_.clear();
   }
 
-  void* Alloc(uint64_t key, size_t requested_size) {
+  void *Alloc(uint64_t key, size_t requested_size) {
     std::lock_guard<std::mutex> lock(mu_);
     Backend::Get()->SetDevice(associated_gpu_id_);
     auto it = key_to_mr_.find(key);
@@ -179,7 +179,7 @@ class BackendMemoryAllocator {
       return it->second->addr;
     }
 
-    void* ptr = Backend::Get()->Alloc(requested_size);
+    void *ptr = Backend::Get()->Alloc(requested_size);
 
     /*cudaError_t cuda_err = cudaMalloc(&ptr, requested_size);
     if (cuda_err != cudaSuccess) {
@@ -188,14 +188,14 @@ class BackendMemoryAllocator {
                  << cudaGetErrorString(cuda_err);
     }*/
 
-    struct ibv_mr* mr =
+    struct ibv_mr *mr =
         ibv_reg_mr(pd_, ptr, requested_size,
                    IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
     if (!mr) {
       Backend::Get()->Free(ptr);
       PS_LOG(FATAL) << "ibv_reg_mr failed for memory on GPU "
-                    << associated_gpu_id_ << " for key " << key
-                    << " size " << requested_size << ": " << strerror(errno);
+                    << associated_gpu_id_ << " for key " << key << " size "
+                    << requested_size << ": " << strerror(errno);
     }
 
     key_to_mr_.emplace(key, mr);
@@ -218,11 +218,11 @@ class BackendMemoryAllocator {
   }
 
  private:
-  struct ibv_pd* pd_ = nullptr;
+  struct ibv_pd *pd_ = nullptr;
   std::mutex mu_;
   int associated_gpu_id_ = -1;
 
-  std::unordered_map<uint64_t, struct ibv_mr*> key_to_mr_;
+  std::unordered_map<uint64_t, struct ibv_mr *> key_to_mr_;
 };
 
 struct WRContext {
@@ -254,10 +254,10 @@ struct RendezvousReply {
 };
 
 struct BufferContext {
-  char* buffer = nullptr;  // Original buffer, for non-GDR or client-side GDR
+  char *buffer = nullptr;  // Original buffer, for non-GDR or client-side GDR
 #ifdef STEPMESH_USE_GDR
-  char* meta_buffer = nullptr;   // For server-side GDR meta
-  void* gpu_data_buffer = nullptr;  // For server-side GDR data
+  char *meta_buffer = nullptr;      // For server-side GDR meta
+  void *gpu_data_buffer = nullptr;  // For server-side GDR data
 #endif
   int meta_len = 0;
   size_t data_num = 0;
@@ -288,7 +288,7 @@ typedef std::tuple<uint64_t, uint32_t, uint64_t, uint32_t, uint32_t,
     RemoteTuple;
 #else
 // <remote_addr, rkey, idx, local_addr>
-typedef std::tuple<uint64_t, uint32_t, uint32_t, MessageBuffer*> RemoteTuple;
+typedef std::tuple<uint64_t, uint32_t, uint32_t, MessageBuffer *> RemoteTuple;
 #endif  // STEPMESH_USE_GDR
 
 // recver, <remote_addr, rkey, idx>

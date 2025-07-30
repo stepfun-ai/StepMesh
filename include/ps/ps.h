@@ -18,10 +18,9 @@
 #include "ps/kv_app.h"
 /** \brief tensor-based communication with a list of attention and ffn nodes. */
 #include "ps/af_tensor_app.h"
-
 #include "ps/internal/backend.h"
-#include "ps/internal/gpu_backend.h"
 #include "ps/internal/cpu_backend.h"
+#include "ps/internal/gpu_backend.h"
 
 namespace ps {
 /** \brief Returns the number of worker nodes */
@@ -49,7 +48,7 @@ inline int MyRank() {
  * \param argv0 the program name, used for logging
  */
 
-inline Node::Role GetRole(const std::string& role_str) {
+inline Node::Role GetRole(const std::string &role_str) {
   Node::Role role = Node::SCHEDULER;
   if (role_str == "worker") {
     role = Node::WORKER;
@@ -144,8 +143,7 @@ inline void StartPS(int customer_id, Node::Role role, int rank, bool do_barrier,
   if (group_size == 1 || role == Node::SCHEDULER) {
     _StartPS(customer_id, role, rank, do_barrier, argv0, 0);
   } else if (group_size > 1 && rank >= 0) {
-    _StartPS(customer_id, role, rank,
-             do_barrier, argv0, rank % group_size);
+    _StartPS(customer_id, role, rank, do_barrier, argv0, rank % group_size);
   } else {
     PS_CHECK(rank >= 0 && group_size > 0)
         << " group_size=" << group_size << " rank=" << rank;

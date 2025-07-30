@@ -4,17 +4,17 @@
  *  Modifications Copyright (C) by StepAI Contributors. 2025.
  */
 #ifndef PS_KV_APP_H_
-#define  PS_KV_APP_H_
+#define PS_KV_APP_H_
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
-#include <string>
-#include <algorithm>
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
-#include <unordered_map>
 
 #include "ps/base.h"
 #include "ps/simple_app.h"
@@ -291,9 +291,7 @@ class KVWorker : public SimpleApp {
     callbacks_[timestamp] = cb;
   }
 
-  int AllocTimestamp() {
-    return obj_->NewRequest(kServerGroup);
-  }
+  int AllocTimestamp() { return obj_->NewRequest(kServerGroup); }
 
   void EraseRecvKvs(int ts) {
     mu_.lock();
@@ -424,9 +422,8 @@ class KVServer : public SimpleApp {
    * \param req the meta-info of the request
    * \param res the kv pairs that will send back to the worker
    */
-  void Response(const KVMeta& req,
-                const KVPairs<Val>& res = KVPairs<Val>(),
-                    TensorEvent* event = nullptr);
+  void Response(const KVMeta& req, const KVPairs<Val>& res = KVPairs<Val>(),
+                TensorEvent* event = nullptr);
 
   /**
    * specify the recver's buffer for target keys
@@ -517,7 +514,7 @@ void KVServer<Val>::RegisterRecvBuffer(int worker_id, SArray<Key>& keys,
                                        const SArray<Val>& vals,
                                        const SArray<int>& lens, int cmd) {
   PS_LOG(WARNING) << "RegisterRecvBuffer is deprecated. Please use "
-                  "RegisterRecvBufferWithRank";
+                     "RegisterRecvBufferWithRank";
   RegisterRecvBuffer_(worker_id, keys, vals, lens, cmd);
   return;
 }
@@ -561,11 +558,9 @@ void KVServer<Val>::Process(const Message& msg) {
   meta.dtype = msg.meta.dtype;
   meta.shape = msg.meta.shape;
 #ifdef STEPMESH_ENABLE_TRACE
-  memcpy(&meta.request_trace,
-         &msg.meta.request_trace,
+  memcpy(&meta.request_trace, &msg.meta.request_trace,
          sizeof(msg.meta.request_trace));
-  memcpy(&meta.response_trace,
-         &msg.meta.response_trace,
+  memcpy(&meta.response_trace, &msg.meta.response_trace,
          sizeof(msg.meta.response_trace));
 #endif
   KVPairs<Val> data;
@@ -586,8 +581,7 @@ void KVServer<Val>::Process(const Message& msg) {
 }
 
 template <typename Val>
-void KVServer<Val>::Response(const KVMeta& req,
-                             const KVPairs<Val>& res,
+void KVServer<Val>::Response(const KVMeta& req, const KVPairs<Val>& res,
                              TensorEvent* event) {
   // server instance group support
   int group_worker_id = req.sender;
@@ -613,11 +607,9 @@ void KVServer<Val>::Response(const KVMeta& req,
   }
 #endif
 #ifdef STEPMESH_ENABLE_TRACE
-  memcpy(&msg.meta.request_trace,
-         &req.request_trace,
+  memcpy(&msg.meta.request_trace, &req.request_trace,
          sizeof(msg.meta.request_trace));
-  memcpy(&msg.meta.response_trace,
-         &req.response_trace,
+  memcpy(&msg.meta.response_trace, &req.response_trace,
          sizeof(msg.meta.response_trace));
 #endif
 

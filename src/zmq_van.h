@@ -102,7 +102,7 @@ class ZMQVan : public Van {
     receiver_ = zmq_socket(context_, ZMQ_ROUTER);
     int option = 1;
     PS_CHECK(!zmq_setsockopt(receiver_, ZMQ_ROUTER_MANDATORY, &option,
-                          sizeof(option)))
+                             sizeof(option)))
         << zmq_strerror(errno);
     PS_CHECK(receiver_ != NULL)
         << "create receiver socket failed: " << zmq_strerror(errno);
@@ -123,7 +123,7 @@ class ZMQVan : public Van {
         port = -1;
         int zmq_err = zmq_errno();
         PS_LOG(FATAL) << "Reached max retry for bind: " << zmq_strerror(zmq_err)
-                   << ". errno = " << zmq_err;
+                      << ". errno = " << zmq_err;
       } else {
         port = 10000 + rand_r(&seed) % 40000;
       }
@@ -234,7 +234,8 @@ class ZMQVan : public Van {
     msg->meta.sender = sender;
     msg->meta.recver = my_node_.id;
 
-    char* meta_buf = PS_CHECK_NOTNULL((char*)zmq_msg_data(notification.meta_zmsg));
+    char* meta_buf =
+        PS_CHECK_NOTNULL((char*)zmq_msg_data(notification.meta_zmsg));
     size_t meta_len = zmq_msg_size(notification.meta_zmsg);
 
     UnpackMeta(meta_buf, meta_len, &(msg->meta));
@@ -318,8 +319,8 @@ class ZMQVan : public Van {
       PS_CHECK(dst_array);
 
       zmq_msg_t zmsg_dstid;
-      PS_CHECK_EQ(zmq_msg_init_data(&zmsg_dstid, dst_array, len, FreeData, NULL),
-               0);
+      PS_CHECK_EQ(
+          zmq_msg_init_data(&zmsg_dstid, dst_array, len, FreeData, NULL), 0);
       while (true) {
         if (len == zmq_msg_send(&zmsg_dstid, receiver_, ZMQ_SNDMORE)) break;
         if (errno == EINTR) continue;
@@ -334,8 +335,8 @@ class ZMQVan : public Van {
       PS_CHECK(myid_array);
 
       zmq_msg_t zmsg_myid;
-      PS_CHECK_EQ(zmq_msg_init_data(&zmsg_myid, myid_array, len, FreeData, NULL),
-               0);
+      PS_CHECK_EQ(
+          zmq_msg_init_data(&zmsg_myid, myid_array, len, FreeData, NULL), 0);
       while (true) {
         if (len == zmq_msg_send(&zmsg_myid, receiver_, ZMQ_SNDMORE)) break;
         if (errno == EINTR) continue;
@@ -369,7 +370,7 @@ class ZMQVan : public Van {
             continue;
           }
           PS_CHECK(0) << "failed to receive message. errno: " << errno << " "
-                   << zmq_strerror(errno);
+                      << zmq_strerror(errno);
         }
         if (should_stop_) break;
         char* buf = PS_CHECK_NOTNULL((char*)zmq_msg_data(zmsg));
@@ -426,7 +427,7 @@ class ZMQVan : public Van {
         if (zmq_msg_send(&data_msg, socket, tag) == data_size) break;
         if (errno == EINTR) continue;
         PS_LOG(WARNING) << "failed to send message, errno: " << errno << " "
-                     << zmq_strerror(errno) << ". " << i << "/" << n;
+                        << zmq_strerror(errno) << ". " << i << "/" << n;
         return -1;
       }
       zmq_msg_close(&data_msg);

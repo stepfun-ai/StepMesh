@@ -9,9 +9,9 @@
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <unordered_map>
 #include <utility>
 #include <vector>
-#include <unordered_map>
 
 #include "ps/internal/message.h"
 #include "ps/internal/threadsafe_queue.h"

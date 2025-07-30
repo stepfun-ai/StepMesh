@@ -12,7 +12,7 @@
 #include <cstring>
 
 #ifndef IBVWARP_H_
-#define  IBVWARP_H_
+#define IBVWARP_H_
 namespace ps {
 
 // Attempt to load a specific symbol version - fail silently
@@ -22,22 +22,22 @@ namespace ps {
     *cast = dlvsym(handle, symbol, version);               \
   } while (0)
 
-#define IBV_INT_PS_CHECK_RET_ERRNO(container, internal_name, call,             \
-                                success_retval)                       \
-  PS_CHECK_NOT_NULL(container, internal_name);                                 \
-  int ret = container.call;                                                 \
-  if (ret != success_retval) {                                              \
-    PS_LOG(WARNING) << "call to " << #internal_name                           \
-                 << " failed with error (" << strerror(errno) << ")"; \
-    return -1;                                                              \
-  }                                                                         \
+#define IBV_INT_PS_CHECK_RET_ERRNO(container, internal_name, call,            \
+                                   success_retval)                            \
+  PS_CHECK_NOT_NULL(container, internal_name);                                \
+  int ret = container.call;                                                   \
+  if (ret != success_retval) {                                                \
+    PS_LOG(WARNING) << "call to " << #internal_name << " failed with error (" \
+                    << strerror(errno) << ")";                                \
+    return -1;                                                                \
+  }                                                                           \
   return 1;
 
 /* PS_CHECK_NOT_NULL: helper macro to check for NULL symbol */
-#define PS_CHECK_NOT_NULL(container, internal_name) \
-  if (container.internal_name == NULL) {         \
-    PS_LOG(WARNING) << "lib wrapper not initialized.";      \
-    return -1;                                   \
+#define PS_CHECK_NOT_NULL(container, internal_name)    \
+  if (container.internal_name == NULL) {               \
+    PS_LOG(WARNING) << "lib wrapper not initialized."; \
+    return -1;                                         \
   }
 
 struct dmlcMlx5dvSymbols {
@@ -84,7 +84,8 @@ int wrap_mlx5dv_query_qp_lag_port(struct ibv_qp* qp, uint8_t* port_num,
 
 int wrap_mlx5dv_modify_qp_lag_port(struct ibv_qp* qp, uint8_t port_num) {
   IBV_INT_PS_CHECK_RET_ERRNO(mlx5dvSymbols, mlx5dv_internal_modify_qp_lag_port,
-                          mlx5dv_internal_modify_qp_lag_port(qp, port_num), 0);
+                             mlx5dv_internal_modify_qp_lag_port(qp, port_num),
+                             0);
 }
 
 static pthread_once_t initOnceControl = PTHREAD_ONCE_INIT;

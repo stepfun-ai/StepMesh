@@ -14,7 +14,7 @@
 // limitations under the License.
 // =============================================================================
 #ifndef VAN_COMMON_H_
-#define  VAN_COMMON_H_
+#define VAN_COMMON_H_
 
 #include <queue>
 
