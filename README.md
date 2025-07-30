@@ -122,4 +122,4 @@ For more test cases and examples, please refer to [tests](./tests).
 
 For more documents, please refer to [docs](./docs).
 
-For more details, please refer to the [**Step-3 system technical report**](https://arxiv.org/abs/2507.19427) and our [**Introduction**](Introduction.md)([Chinese Version](Introduction_zh_cn.md)).
+For more details, please refer to the [**Step-3 system technical report**](https://arxiv.org/abs/2507.19427) and our [**Introduction**](Introduction.md)([Chinese Version](Introduction_cn.md)).

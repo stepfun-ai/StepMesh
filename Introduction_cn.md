@@ -6,7 +6,7 @@
 
 AFD 对通信库提出了很高的延迟要求。对于一个 3 阶段的 AFD 流水线，如果要满足端到端 20 Tokens/s 的 SLA 约束，需要在 273us（本文第二部分会介绍 273us 的缘由）内完成所有 Attention 实例和 FFN 实例之间的数据传输。此外，像 NCCL 和 DeepEP 这样的通信库会引入额外的通信 SM 占用开销，影响 Attention 和 FFN 的计算速度。AF 分离还引入了一种新颖的二分图通信模式，这与现有的集合通信接口（如 AllReduce、AllToAll 等）不同。现有集合通信库对二分图通信没有良好的原生支持。虽然可以使用 ncclSend/ncclRecv 等接口组合满足功能需求，但它们不可避免地会牺牲性能。为了解决上述问题，我们开发了 StepMesh，一个基于 GPUDirect RDMA 的专门用于 AF 分离的通信库，它提供低延迟、零 SM 占用和灵活的二分图通信能力。
 
-基于对 AFD 通信模式的深入理解，开源项目 BytePS 能够完美适配 AFD 的通信需求，因此我们在 BytePS 代码基础上做了二次开发。对于基础通信组件，我们还是希望基于前人的肩膀做增量式的工作，不重复造轮子。同时，MegaScale-Infer 也为 AFD 系统的 MxN 通信库提供了参考设计。
+基于对 AFD 通信模式的深入理解，开源项目 [**BytePs**](https://github.com/stepfun-ai/StepMesh) 能够完美适配 AFD 的通信需求，因此我们在 BytePS 代码基础上做了二次开发。对于基础通信组件，我们还是希望基于前人的肩膀做增量式的工作，不重复造轮子。同时，MegaScale-Infer 也为 AFD 系统的 MxN 通信库提供了参考设计。
 在这些上述已有工作的基础上，我们根据 Step-3 的推理流量特征需求，规划了 AFD 的通信时序（Timeline），以满足 AFD 系统对低延迟的严苛要求。此外，我们还在探索以及解决 AFD 系统的性能瓶颈——Straggler 问题。除了上述工作，我们还将介绍其他技术选择，包括对 NCCL，IBGDA（InfiniBand GPUDirect Async）和多后端（Backend）架构的思考与应用。
 
 ## AFD 流量特征
@@ -15,11 +15,11 @@ AFD 对通信库提出了很高的延迟要求。对于一个 3 阶段的 AFD �
 
 **<p align="center">图1： 通信开销约束，以 1A1F 3 级流水线为例</p>**
 
-在实际讨论 AFD 流量特征前，我们先展示 AFD 的通信约束。为简化分析（但不损失通用性），我们采取图 1 所示的 1A1F 3 级场景做讨论。图 1 中， $A_{1,1}$和$A_{1,2}$分别表示 Layer 1 的 Micorbatch 1 和 2 的计算时间。如果要满足 20Tokens/s 的 SLA 约束，则 Time Per Output Token （TPOT）需要小于 50ms，即每层的计算和通信开销小于$50ms / \# Layers$。Step-3 具有 61 层，因此每层开销需要小于 819us。则有 $A_{1,1} + A_{1,2} + A_{1,3} \le 819us$。因为 Micorbatch 大小相同，则$A_{x,y} \le 273us$。上述过程同样可以应用于 FFN 侧。如果进一步考虑通信，因为$A_{1,1}$和$A_{2,1}$之间存在数据依赖，因此$A_{1,1}$所有相关的 FFN、通信过程都需要在$A_{2,1}$发生前完成，因此有如下关系。
+在实际讨论 AFD 流量特征前，我们先展示 AFD 的通信约束。为简化分析（但不损失通用性），我们采取图 1 所示的 1A1F 3 级场景做讨论。图 1 中， $A_{1,1}$ 和 $A_{1,2}$ 分别表示 Layer 1 的 Micorbatch 1 和 2 的计算时间。如果要满足 20Tokens/s 的 SLA 约束，则 Time Per Output Token （TPOT）需要小于 50ms，即每层的计算和通信开销小于 50ms /# Layers。Step-3 具有 61 层，因此每层开销需要小于 819us。则有 $A_{1,1} + A_{1,2} + A_{1,3} \le 819us$ 。因为 Micorbatch 大小相同，则 $A_{x,y} \le 273us$ 。上述过程同样可以应用于 FFN 侧。如果进一步考虑通信，因为 $A_{1,1}$ 和 $A_{2,1}$ 之间存在数据依赖，因此 $A_{1,1}$ 所有相关的 FFN、通信过程都需要在 $A_{2,1}$ 发生前完成，因此有如下关系。
 
 $$A_{1,1} + F_{1,1} + A2F + F2A \le A_{1,1} + A_{1,2} + A_{1,3}  $$
 
-在实际运行系统中，我们会调节 Attention Instance 和 FFN Instance 的数量，以保证 Attention 开销和 FFN 开销配平，即$A_{x,y} \approx F_{x, y}$。基于这一假设，上述不等式则可进一步简化为$A2F + F2A \le A_{x,y} \le 273us $。即 AFD 通信过程中，如果要满足 20Tokens/s 的 SLA 约束，完成一次双向通信时间开销应小于 $273us$。
+在实际运行系统中，我们会调节 Attention Instance 和 FFN Instance 的数量，以保证 Attention 开销和 FFN 开销配平，即 $A_{x,y} \approx F_{x, y}$ 。基于这一假设，上述不等式则可进一步简化为 $A2F + F2A \le A_{x,y} \le 273us$ 。即 AFD 通信过程中，如果要满足 20Tokens/s 的 SLA 约束，完成一次双向通信时间开销应小于 $273us$ 。
 上述计算过程对于不同 SLA 和不同级数的流水线同样生效。
 
 ![comm-pattern](docs/figs/comm-pattern.png)
@@ -31,7 +31,7 @@ $$A_{1,1} + F_{1,1} + A2F + F2A \le A_{1,1} + A_{1,2} + A_{1,3}  $$
 基于上述通信延迟约束以及通信模式，我们可以进一步分析 StepMesh 通信的预期吞吐。对于特定模型和芯片，FFN 所支持的 Batch Size 相对比较固定，并且不受 Context Length 变化影响，因此我们围绕 FFN GPU 做通信数据量和开销计算。表 1 中展示了技术报告中 2A2F（Batch Size=128）的通信量（Expert Distribution 通信量由于较小，本部分暂不考虑）以及满足 SLA 需求前提下的理想通信开销。例如，对于 A2F 方向，每个 FFN GPU 需要接收来自两个 Attention GPU 的数据，数据量为 Batch Size x Hidden Size，下表中为 128 x 7168，需要在 91us 内完成。需要注意的是表 1 中的通信开销不仅包括物理网络 RDMA 传输开销，还包括通信库收发的软件处理开销。
 
 | 方向 | Scale | 单位 | Dtype  | 数据量 （Bytes Per-FFN-GPU）| 满足 SLA 的有效吞吐 | 满足 SLA 的通信开销 （us）|
-| --- | --- | --- | --- | --- | --- | --- |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | A2F | 2A->1F | Per-Layer | FP8 | 2 x 128 x 7168 x 1 | 161.3Gbps | 91us |
 | F2A | 2F -> 2A | Per-Layer | BF16 | 2 x 128 x 7168 x 2 | 161.3Gbps | 182us |
 | Overall |  | Per-Layer |  | 2 x 128 x 7168 x 3 | 161.3Gbps | 273us |

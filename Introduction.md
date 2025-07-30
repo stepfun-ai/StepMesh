@@ -2,13 +2,13 @@
 
 ## Overview
 
-StepMesh is built upon the open-source project [**BytePs**](https://github.com/stepfun-ai/StepMesh). The concept of Attention-FFN Disaggregation (AFD) is detailed in the [**Step-3 system technical report**](https://arxiv.org/abs/2507.19427).
+Following the release of the [Step-3 Technical Report](https://arxiv.org/abs/2507.19427), we have received numerous inquiries regarding the specifics of the Attention-FFN Separation approach, with many questions focused on our open-source communication library, [StepMesh](https://github.com/stepfun-ai/StepMesh). This article delves into the technical details and design choices of StepMesh, sharing our insights and considerations regarding the communication requirements for AF Separation systems.
 
 AFD imposes stringent latency requirements on communication libraries. For a 3-stage AFD pipeline, meeting an end-to-end SLA of 20 Tokens/s necessitates completing all data transfers between Attention and FFN instances within **272us** (the rationale behind the 273us mentioned earlier is explained in the second part of this document). Additionally, existing communication libraries like NCCL and DeepEP introduce extra communication Stream Multiprocessor (SM) occupancy overhead, impacting the computation speeds of both Attention and FFN.
 
 AFD also introduces a novel bipartite graph communication pattern, which differs from traditional collective communication interfaces such as AllReduce and AllToAll. Current collective communication libraries lack robust support for bipartite graph communication. Although workarounds like ncclSend/ncclRecv can be employed, they inevitably compromise performance.
 
-To address these challenges, we developed StepMesh—a communication library tailored for AFD, leveraging GPUDirect RDMA. StepMesh offers:
+To address these challenges, we developed StepMesh — a communication library tailored for AFD, leveraging GPUDirect RDMA. StepMesh offers:
 
 - **Low Latency**: Optimized for rapid data transfers to meet the tight timing constraints of AFD.
 - **Zero SM Occupancy**: Minimizes the impact on computational resources by avoiding unnecessary SM usage during communication.
@@ -25,7 +25,7 @@ Through a deep understanding of the AFD communication pattern, we identified tha
 
 **<p align="center">Figure 1: 1A1F 3-Stage Pipe For Communication Constraints Illustration</p>**
 
-Before delving into the traffic characteristics of AFD, let's first examine the communication constraints of AFD. To simplify the analysis (without compromising generality), we'll use the 1A1F 3-stage pipeline depicted in Figure 1 for our discussion. In Figure 1, $A_{1,1}$ and $A_{1,2}$ represent the computation times for Microbatch 1 and 2 of Layer 1, respectively. To meet the SLA requirement of 20 Tokens/s, the Time Per Output Token (TPOT) must be less than 50ms. This implies that the computation and communication overhead for each layer should be less than $50ms / \# Layers$. Given that Step-3 has 61 layers, the overhead per layer must be less than 819us. Therefore, we have:
+Before delving into the traffic characteristics of AFD, let's first examine the communication constraints of AFD. To simplify the analysis (without compromising generality), we'll use the 1A1F 3-stage pipeline depicted in Figure 1 for our discussion. In Figure 1, $A_{1,1}$ and $A_{1,2}$ represent the computation times for Microbatch 1 and 2 of Layer 1, respectively. To meet the SLA requirement of 20 Tokens/s, the Time Per Output Token (TPOT) must be less than 50ms. This implies that the computation and communication overhead for each layer should be less than 50ms /# Layers. Given that Step-3 has 61 layers, the overhead per layer must be less than 819us. Therefore, we have:
 
 $$A_{1,1} + A_{1,2} + A_{1,3} \le 819us$$
 
@@ -74,7 +74,7 @@ Based on the communication latency objectives and the AFD communication pattern 
 
 
 | Direction | Scale |  | Dtype | Bytes Per-FFN-GPU | Throughput | Latency | 
-| --- | --- | --- | --- | --- | --- | --- |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | A2F | 2A->1F | Per-Layer | FP8 | 2 x 128 x 7168 x 1 | 161.3Gbps | 91us |
 | F2A | 2F -> 2A | Per-Layer | BF16 | 2 x 128 x 7168 x 2 | 161.3Gbps | 182us |
 | Overall |  | Per-Layer |  | 2 x 128 x 7168 x 3 | 161.3Gbps | 273us |

@@ -5,8 +5,8 @@ on: [push, pull_request]
 jobs:
   build:
     runs-on: ubuntu-22.04
-    container:
-      image: pytorch/pytorch:2.6.0-cuda12.4-cudnn9-devel
+    # container:
+    #   image: pytorch/pytorch:2.6.0-cuda12.4-cudnn9-devel
     strategy:
       matrix:
         os: [ubuntu-22.04]
@@ -20,11 +20,13 @@ jobs:
       uses: actions/setup-python@v5 # Use a more recent version of actions/setup-python
       with:
         python-version: ${{ matrix.python-version }}
+    - name: Add dependencies
+      run: sudo apt-get install -y clang-format
     - uses: actions/checkout@v4 # Use a more recent version of actions/checkout
     - name: Check Lint
       run: bash tools/check_diff.sh
-    - name: Install dependencies
-      run: bash tools/install_deps.sh
+    # - name: Install dependencies
+    #   run: bash tools/install_deps.sh
     # - name: Build af 
       # run: make -j af
     # - name: Build pip
