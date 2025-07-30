@@ -13,7 +13,7 @@ AFD 对通信库提出了很高的延迟要求。对于一个 3 阶段的 AFD �
 
 ![comm-require](docs/figs/comm-requiremnt.png)
 
-**图1： 通信开销约束，以 1A1F 3 级流水线为例**
+**<p align="center">图1： 通信开销约束，以 1A1F 3 级流水线为例</p>**
 
 在实际讨论 AFD 流量特征前，我们先展示 AFD 的通信约束。为简化分析（但不损失通用性），我们采取图 1 所示的 1A1F 3 级场景做讨论。图 1 中， $A_{1,1}$和$A_{1,2}$分别表示 Layer 1 的 Micorbatch 1 和 2 的计算时间。如果要满足 20Tokens/s 的 SLA 约束，则 Time Per Output Token （TPOT）需要小于 50ms，即每层的计算和通信开销小于$50ms / \# Layers$。Step-3 具有 61 层，因此每层开销需要小于 819us。则有 $A_{1,1} + A_{1,2} + A_{1,3} \le 819us$。因为 Micorbatch 大小相同，则$A_{x,y} \le 273us$。上述过程同样可以应用于 FFN 侧。如果进一步考虑通信，因为$A_{1,1}$和$A_{2,1}$之间存在数据依赖，因此$A_{1,1}$所有相关的 FFN、通信过程都需要在$A_{2,1}$发生前完成，因此有如下关系。
 
@@ -24,7 +24,7 @@ $$A_{1,1} + F_{1,1} + A2F + F2A \le A_{1,1} + A_{1,2} + A_{1,3}  $$
 
 ![comm-pattern](docs/figs/comm-pattern.png)
 
-**图 2：StepMesh 通信模式，以 2A2F 3 级流水线（FFN 并行策略为 EP）为例**
+**<p align="center">图 2：StepMesh 通信模式，以 2A2F 3 级流水线（FFN 并行策略为 EP）为例</p>**
 
 下面我们介绍 AFD 通信模式。如图 2 所示，StepMesh 要求为不同的 Microbatch 预注册内存（StepMesh 中的注册是指 RDMA Register MemoryRegion，这是进行 RDMA 通信操作的前提）。上述设计会造成额外的显存开销，但是能够消除相同 Layer 不同 Microbatch 之间的数据依赖，提高 Overlap 程度。在通信过程，A2F Tensor（包括 Tokens，Expert Distribution 等）由 Attention Instance 广播给所有的 FFN Instance，同时告知用于接收当前 Microbatch FFN 计算结果的 F2A Tensor 地址。FFN 计算完成后则直接将计算结果（图 2 中 F2A Tensor，主要为 Activitions）直接 RDMA 发送到 Attention 对应的 Tensor 中。实际上 FFN Instance 还涉及到机内 AllGather 等通信操作，因为是由其余组件实现的，所以本文不讨论。
 
@@ -36,7 +36,7 @@ $$A_{1,1} + F_{1,1} + A2F + F2A \le A_{1,1} + A_{1,2} + A_{1,3}  $$
 | F2A | 2F -> 2A | Per-Layer | BF16 | 2 x 128 x 7168 x 2 | 161.3Gbps | 182us |
 | Overall |  | Per-Layer |  | 2 x 128 x 7168 x 3 | 161.3Gbps | 273us |
 
-**表 1：满足 SLA 条件下，2A2F（Batch Size=128）场景下，StepMesh 理想通信开销**
+**<p align="center">表 1：满足 SLA 条件下，2A2F（Batch Size=128）场景下，StepMesh 理想通信开销</p>**
 
 本节讨论了 AFD 的流量特征。在这种流量特征下，当满足上述延迟约束时，StepMesh 可以实现通信开销完全被计算隐藏。
 
@@ -46,7 +46,7 @@ $$A_{1,1} + F_{1,1} + A2F + F2A \le A_{1,1} + A_{1,2} + A_{1,3}  $$
 
 ![StepMesh Timeline](docs/figs/timeline.png)
 
-**图 3：3 级流水线下，StepMesh Timeline**
+**<p align="center">图 3：3 级流水线下，StepMesh Timeline</p>**
 
 图 3 所设计的 Timeline 有两个特点：第一，不同 Microbatch 使用不同的 GPU Stream，以实现不同 Microbatch 之间 GPU Op 的 Overlap，例如，当前 Microbatch 的 FFN 机内 AllGather 操作，可以与上一 Microbatch 的 FFN 计算操作 Overlap。第二，不同 Microbatch 之间不存在数据依赖，因此 StepMesh 不需要等待上一 Microbatch，计算完成后可立即执行 RDMA 发送操作。
 当然，StepMesh 还包含更多与低延迟相关的工程设计，以确保图 3 中每个线程或 Stream 的完成时间均能满足 SLA 要求。本文重点讨论 Timeline，旨在展示在当前 AFD 系统中，通信与计算如何协同工作，同时也为后续社区设计更优的 AFD 系统提供参考。
@@ -59,7 +59,7 @@ AFD 对于计算和通信延迟有着极高要求，当任意节点出现计算�
 
 ![Tracer](docs/figs/tracer.png)
 
-**图 4： StepMesh 监控信息**
+**<p align="center">图 4： StepMesh 监控信息</p>**
 
 为了有效发现 Straggler 节点，我们采集了以下信息：
 上图的黑色时间戳为 Attention 和 FFN 实现中使用 get_nanosecond API 采集的时间戳。而红色为 StepMesh 中开启 ENABLE_TRACE 后采集的时间戳，并由数据包的 Meta 携带。在 Attention 端即可算出与不同 FFN 通信时的网络耗时、FFN 端的耗时总时长，以及 FFN 端的 GPU 计算时长。使用这些信息，可以分析出以下降速问题：
@@ -116,4 +116,4 @@ NCCL 是大模型训练推理的 SOTA（State-of-the-Art）集合通信库。在
 为了能方便适配不同的计算芯片，我们将与计算芯片交互抽象为 Backend 对象和统一的 API，其功能包括：
 - 内存管理： Alloc 与 Free，用于预注册 Buffer 的管理；
 - 事件管理：用于 CPU 管理线程与 GPU Stream 的状态同步；
-数据的搬移使用 GPU Direct RDMA 技术卸载给 RNIC 去处理。作为参考，当前开源版本包含了 CpuBackend 和 GpuBackend（NVIDIA Cuda）两种实现。更多相关内容可以参考我们的 [接口实现文档](https://github.com/stepfun-ai/StepMesh/blob/main/docs/backend.md)。
+数据的搬移使用 GPU Direct RDMA 技术卸载给 RNIC 去处理。作为参考，当前开源版本包含了 CpuBackend 和 GpuBackend（NVIDIA Cuda）两种实现。更多相关内容可以参考我们的 [接口实现文档](docs/backend.md)。

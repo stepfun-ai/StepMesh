@@ -23,7 +23,7 @@ Through a deep understanding of the AFD communication pattern, we identified tha
 
 ![comm-require](docs/figs/comm-requiremnt.png)
 
-**Figure 1: 1A1F 3-Stage Pipe For Communication Constraints Illustration**
+**<p align="center">Figure 1: 1A1F 3-Stage Pipe For Communication Constraints Illustration</p>**
 
 Before delving into the traffic characteristics of AFD, let's first examine the communication constraints of AFD. To simplify the analysis (without compromising generality), we'll use the 1A1F 3-stage pipeline depicted in Figure 1 for our discussion. In Figure 1, $A_{1,1}$ and $A_{1,2}$ represent the computation times for Microbatch 1 and 2 of Layer 1, respectively. To meet the SLA requirement of 20 Tokens/s, the Time Per Output Token (TPOT) must be less than 50ms. This implies that the computation and communication overhead for each layer should be less than $50ms / \# Layers$. Given that Step-3 has 61 layers, the overhead per layer must be less than 819us. Therefore, we have:
 
@@ -54,7 +54,7 @@ By following these principles, we can effectively design and optimize AFD commun
 
 ![comm-pattern](docs/figs/comm-pattern.png)
 
-**Figure 2: StepMesh Communciation Patterns, Examplified by the 2A2F 3-Stage Pipeline**
+**<p align="center">Figure 2: StepMesh Communciation Patterns, Examplified by the 2A2F 3-Stage Pipeline</p>**
 
 Next, we introduce the AFD communication pattern. As illustrated in Figure 2, StepMesh mandates pre-registration of memory for different microbatches (in StepMesh, registration refers to RDMA Register MemoryRegion, a prerequisite for RDMA communication operations). While this design incurs additional GPU memory overhead, it effectively eliminates data dependencies between different microbatches of the same layer, thereby enhancing the degree of overlap.
 
@@ -72,13 +72,14 @@ Next, we introduce the AFD communication pattern. As illustrated in Figure 2, St
 
 Based on the communication latency objectives and the AFD communication pattern discussed earlier, we can further analyze the expected throughput of StepMesh communication. For a given model and intelligent computing chip, the FFN typically supports a relatively fixed batch size that is unaffected by changes in context length. Therefore, our analysis centers around the FFN GPU for calculating communication data volume and overhead.
 
+
 | Direction | Scale |  | Dtype | Bytes Per-FFN-GPU | Throughput | Latency | 
 | --- | --- | --- | --- | --- | --- | --- |
 | A2F | 2A->1F | Per-Layer | FP8 | 2 x 128 x 7168 x 1 | 161.3Gbps | 91us |
 | F2A | 2F -> 2A | Per-Layer | BF16 | 2 x 128 x 7168 x 2 | 161.3Gbps | 182us |
 | Overall |  | Per-Layer |  | 2 x 128 x 7168 x 3 | 161.3Gbps | 273us |
 
-**Table 1: Communication Volume and Ideal Overhead for 2A2F (Batch Size=128)**
+**<p align="center">Table 1: Communication Volume and Ideal Overhead for 2A2F (Batch Size=128)</p>**
 
 1. A2F Communication:
   - Each FFN GPU receives data from two Attention GPUs.
@@ -102,7 +103,7 @@ To achieve the aforementioned objectives, we have designed the following Timelin
 
 ![timeline](docs/figs/timeline.png)
 
-**Figure 3:  StepMesh Timeline for a 3-stage pipeline**
+**<p align="center">Figure 3:  StepMesh Timeline for a 3-stage pipeline</p>**
 
 The Timeline designed in Figure 3 exhibits two distinctive features:
 
@@ -118,7 +119,7 @@ During AFD communication, both the Attention and FFN ends wait until all packets
 
 ![Tracer](docs/figs/tracer.png)
 
-**Figure 4: Traces for Straggler nodes diagnosis**
+**<p align="center">Figure 4: Traces for Straggler nodes diagnosis</p>**
 
 To effectively identify Straggler nodes, we have developed a low-overhead trace implementation that collects the following information:
 
@@ -178,4 +179,4 @@ To facilitate seamless integration with diverse compute chips, we have abstracte
 - **Event Management**: This ensures proper synchronization between CPU management threads and GPU streams.
 - **Data Transfer**: Leveraging GPU Direct RDMA (GDRDMA) technology, data movement tasks are offloaded to the RDMA Network Interface Card (RNIC).
 
-As a reference, the current open-source version includes implementations for CpuBackend and GpuBackend (specifically, NVIDIA CUDA). For more related content, please refer to our [implementation document](https://github.com/stepfun/StepMesh/blob/main/docs/backend.md) .
+As a reference, the current open-source version includes implementations for CpuBackend and GpuBackend (specifically, NVIDIA CUDA). For more related content, please refer to our [implementation document](docs/backend.md) .
