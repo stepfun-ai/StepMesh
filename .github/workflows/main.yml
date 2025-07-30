@@ -2,27 +2,29 @@ name: CI
 
 on: [push, pull_request]
 
-env:
-  UCX_LINK: https://github.com/openucx/ucx
 jobs:
   build:
-
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    container:
+      image: pytorch/pytorch:2.6.0-cuda12.4-cudnn9-devel
+    strategy:
+      matrix:
+        os: [ubuntu-22.04]
+        python-version: ['3.10']
+        torch-version: [2.6.0] 
+        cuda-version: ['cu124']
 
     steps:
+    # Add a step to set up Python
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5 # Use a more recent version of actions/setup-python
+      with:
+        python-version: ${{ matrix.python-version }}
+    #   run: bash tools/check_diff.sh
+    - uses: actions/checkout@v4 # Use a more recent version of actions/checkout
     - name: Install dependencies
-      run: sudo apt-get install numactl libnuma-dev clang-format
-    - uses: actions/checkout@v1
-    - name: Code format
-      run: bash tools/check_diff.sh
-    - name: Get UCX
-      run: git clone -b v1.11.0 $UCX_LINK /tmp/ucx
-    - name: Build UCX
-      run: |
-        set -eE
-        cd /tmp/ucx
-        ./autogen.sh
-        ./contrib/configure-release --without-java --enable-mt --prefix $PWD/install
-        make -j install
-    - name: Build
-      run: make -j USE_UCX=1 ADD_CFLAGS="-I/tmp/ucx/install/include -L/tmp/ucx/install/lib"
+      run: bash tools/install_deps.sh
+    # - name: Build af 
+      # run: make -j af
+    # - name: Build pip
+      # run: python3 setup.py build

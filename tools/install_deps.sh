@@ -1,4 +1,4 @@
-sudo apt install -y build-essential libtool autoconf automake libnuma-dev unzip pkg-config librdmacm-dev rdma-core
+sudo apt install -y build-essential libtool autoconf automake libnuma-dev unzip pkg-config librdmacm-dev rdma-core make cmake python3-pip
 
 THIS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )"/../ &> /dev/null && pwd )"
 
