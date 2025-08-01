@@ -4,7 +4,6 @@ from queue import Queue
 import torch, os
 import fserver_lib as f
 import optimus
-from optimus.ops import silu_dot as optimus_silu_dot
 import numpy as np
 
 
