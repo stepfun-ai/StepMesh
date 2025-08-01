@@ -27,7 +27,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DDMLC_USE_ZMQ -DDMLC_USE_CUDA -DSTEPMES
 
 link_directories("${PROJECT_SOURCE_DIR}/deps/lib")
 
-list(APPEND STEPAF_LIBS pthread dl zmq ibverbs rdmacm)
+list(APPEND STEPAF_LIBS pthread dl zmq ibverbs rdmacm rt)
 
 include_directories("${PROJECT_SOURCE_DIR}/include/")
 include_directories("${PROJECT_SOURCE_DIR}/deps/include/")
