@@ -13,8 +13,11 @@
 
 #include <ATen/ATen.h>
 #include <torch/torch.h>
-#include <ATen/cuda/CUDAContext.h>
-#include <ATen/cuda/CUDAEvent.h>
+
+#ifdef DMLC_USE_CUDA
+  #include <ATen/cuda/CUDAContext.h>
+  #include <ATen/cuda/CUDAEvent.h>
+#endif
 
 #include "ps/af_tensor_app.h"
 

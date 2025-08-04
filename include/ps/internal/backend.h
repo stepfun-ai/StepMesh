@@ -5,8 +5,10 @@
 #define PS_INTERNAL_BACKEND_H_
 
 #include <ATen/ATen.h>
+#ifdef DMLC_USE_CUDA
 #include <ATen/cuda/CUDAContext.h>
 #include <ATen/cuda/CUDAEvent.h>
+#endif
 #include <torch/torch.h>
 
 #include <memory>

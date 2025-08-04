@@ -4,6 +4,7 @@
 
 #include "ps/internal/gpu_backend.h"
 
+#ifdef DMLC_USE_CUDA
 #include <ATen/cuda/CUDAContext.h>
 #include <ATen/cuda/CUDAEvent.h>
 
@@ -212,3 +213,4 @@ int GpuBackend::SyncMemEvent(void* event) {
 }
 
 }  // namespace ps
+#endif  // DMLC_USE_CUDA

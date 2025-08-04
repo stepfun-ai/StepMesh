@@ -138,7 +138,11 @@ inline void _StartPSGroup(int customer_id, std::vector<int> worker_ranks,
 inline void StartPS(int customer_id, Node::Role role, int rank, bool do_barrier,
                     const char *argv0 = nullptr) {
   Backend::Register("CPU", new CpuBackend());
+
+#ifdef DMLC_USE_CUDA
   Backend::Register("GPU", new GpuBackend());
+#endif
+
   int group_size = 1;
 
   Environment::Get()->find("DMLC_GROUP_SIZE", &group_size, group_size);

@@ -1,7 +1,5 @@
 /* Copyright (c) 2025, StepFun Authors. All rights reserved. */
 
-#include <ATen/cuda/CUDAContext.h>
-#include <ATen/cuda/CUDAEvent.h>
 #include <torch/extension.h>
 #include <sys/shm.h>
 #include <sys/stat.h>
