@@ -101,7 +101,7 @@ class AFTensorWorker {
     int server_count = server_ranges.size();
     PS_CHECK_GT(server_count, 0) << "zero servers and cannot pushpull";
 
-    std::unique_lock<std::mutex> lock(mu_);
+    // std::unique_lock<std::mutex> lock(mu_);
     auto req = AFTensorRequest();
     std::vector<int> timestamps;
     bool first = true;
@@ -135,7 +135,7 @@ class AFTensorWorker {
 
     pushpull_queue_.Push(std::move(req));
 
-    std::unique_lock<std::mutex> timestamp_lock(timestamp_mu_);
+    // std::unique_lock<std::mutex> timestamp_lock(timestamp_mu_);
     batch_timestamps_[start_ts] = std::move(timestamps);
     return start_ts;
   }
@@ -146,7 +146,7 @@ class AFTensorWorker {
    */
   void Wait(int timestamp) {
     kv_.Wait(timestamp);
-    std::unique_lock<std::mutex> lock(timestamp_mu_);
+    // std::unique_lock<std::mutex> lock(timestamp_mu_);
     auto itr = batch_timestamps_.find(timestamp);
     if (itr != batch_timestamps_.end()) {
       for (auto ts : itr->second) {

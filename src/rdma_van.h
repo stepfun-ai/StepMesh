@@ -495,45 +495,45 @@ class RDMAVan : public Van {
     std::lock_guard<std::mutex> lock(log_mu_);
 
     if (!IsValidPushpull(msg)) {
-      LOG(INFO) << "Send Control Message" << std::flush;
+      PS_LOG(INFO) << "Send Control Message" << std::flush;
     } else if (msg.meta.push && msg.meta.request) {
       // worker, push request
-      LOG(INFO) << "Send Push Request: key=" << msg.meta.key
-                << "\t timestamp=" << msg.meta.timestamp
-                << "\t recver=" << msg.meta.recver
-                << "\t tensor_len=" << msg_buf->mrs[0].second
-                << "\t remote_idx=" << std::get<2>(remote_tuple)
-                << "\t remote_addr="
-                << reinterpret_cast<void *>(std::get<0>(remote_tuple))
-                << std::flush;
+      PS_LOG(TRACE) << "Send Push Request: key=" << msg.meta.key
+                    << "\t timestamp=" << msg.meta.timestamp
+                    << "\t recver=" << msg.meta.recver
+                    << "\t tensor_len=" << msg_buf->mrs[0].second
+                    << "\t remote_idx=" << std::get<2>(remote_tuple)
+                    << "\t remote_addr="
+                    << reinterpret_cast<void *>(std::get<0>(remote_tuple))
+                    << std::flush;
     } else if (msg.meta.push && !msg.meta.request) {
       // server, push response
-      LOG(INFO) << "Send Push Response: key=" << msg.meta.key
-                << "\t timestamp=" << msg.meta.timestamp
-                << "\t recver=" << msg.meta.recver
-                << "\t remote_idx=" << std::get<2>(remote_tuple)
-                << "\t remote_addr="
-                << reinterpret_cast<void *>(std::get<0>(remote_tuple))
-                << std::flush;
+      PS_LOG(TRACE) << "Send Push Response: key=" << msg.meta.key
+                    << "\t timestamp=" << msg.meta.timestamp
+                    << "\t recver=" << msg.meta.recver
+                    << "\t remote_idx=" << std::get<2>(remote_tuple)
+                    << "\t remote_addr="
+                    << reinterpret_cast<void *>(std::get<0>(remote_tuple))
+                    << std::flush;
     } else if (!msg.meta.push && msg.meta.request) {
       // worker, pull request
-      LOG(INFO) << "Send Pull Request: key=" << msg.meta.key
-                << "\t timestamp=" << msg.meta.timestamp
-                << "\t recver=" << msg.meta.recver
-                << "\t remote_idx=" << std::get<2>(remote_tuple)
-                << "\t remote_addr="
-                << reinterpret_cast<void *>(std::get<0>(remote_tuple))
-                << std::flush;
+      PS_LOG(TRACE) << "Send Pull Request: key=" << msg.meta.key
+                    << "\t timestamp=" << msg.meta.timestamp
+                    << "\t recver=" << msg.meta.recver
+                    << "\t remote_idx=" << std::get<2>(remote_tuple)
+                    << "\t remote_addr="
+                    << reinterpret_cast<void *>(std::get<0>(remote_tuple))
+                    << std::flush;
     } else if (!msg.meta.push && !msg.meta.request) {
       // server, pull response
-      LOG(INFO) << "Send Pull Response: key=" << msg.meta.key
-                << "\t timestamp=" << msg.meta.timestamp
-                << "\t recver=" << msg.meta.recver
-                << "\t tensor_len=" << msg.meta.val_len << "\t idx="
-                << "none"
-                << "\t remote_addr="
-                << reinterpret_cast<void *>(std::get<0>(remote_tuple))
-                << std::flush;
+      PS_LOG(TRACE) << "Send Pull Response: key=" << msg.meta.key
+                    << "\t timestamp=" << msg.meta.timestamp
+                    << "\t recver=" << msg.meta.recver
+                    << "\t tensor_len=" << msg.meta.val_len << "\t idx="
+                    << "none"
+                    << "\t remote_addr="
+                    << reinterpret_cast<void *>(std::get<0>(remote_tuple))
+                    << std::flush;
     }
   }
 
@@ -738,8 +738,10 @@ class RDMAVan : public Van {
     mem_allocator_.reset(new MemoryAllocator(pd_));
 
     // TODO(clan): Replace the rough estimate here
-    cq_ = ibv_create_cq(context_, kMaxConcurrentWorkRequest * 2, NULL, nullptr,
-                        0);
+    if (cq_ == nullptr) {
+      cq_ = ibv_create_cq(context_, kMaxConcurrentWorkRequest * 2, NULL,
+                          nullptr, 0);
+    }
     PS_CHECK(cq_) << "Failed to create completion queue";
   }
 

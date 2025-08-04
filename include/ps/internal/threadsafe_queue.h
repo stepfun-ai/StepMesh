@@ -126,7 +126,7 @@ class ThreadsafeQueue {
       count++;
       if (count > max_count) {
         count = 0;
-        _mm_pause();
+        // _mm_pause();
       }
     }
 
