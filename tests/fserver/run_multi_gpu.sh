@@ -30,6 +30,8 @@ if [ $ROLE == "server" ]; then
   export DMLC_NODE_HOST=${SCHEDULER_IP}
   DMLC_ROLE=scheduler python3 $THIS_DIR/${BIN}.py &
 
+  sleep 1 # wait scheduler
+
   export DMLC_INTERFACE=auto
   for P in {0..7}; do
     DMLC_ROLE=server STEPMESH_GPU=${P} python3 $THIS_DIR/${BIN}.py $@ &
