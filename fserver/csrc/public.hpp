@@ -125,6 +125,10 @@ int push_pull(std::vector<torch::Tensor>& push_tensors,
               std::vector<uint64_t>& push_keys,
               std::vector<torch::Tensor>& pull_tensors,
               std::vector<uint64_t>& pull_keys) {
+
+  PS_CHECK_EQ(push_tensors.size(), push_keys.size());
+  PS_CHECK_EQ(pull_tensors.size(), pull_keys.size());
+
   auto push_batch = KeyTensorBatch(push_tensors.size());
   auto pull_batch = KeyTensorBatch(pull_tensors.size());
   for (size_t i = 0; i < push_tensors.size(); i++) {
