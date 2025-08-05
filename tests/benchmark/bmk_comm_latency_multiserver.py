@@ -87,7 +87,7 @@ for mb in range(3):
         o_tensors += [torch.rand([num_token, dim], dtype=torch.bfloat16, device=f'cuda:{gpu}') for _ in range(bsz)]
     out_tensors_buffers.append(o_tensors)
 
-    out_tensors_keys.append([gen_pull_key(i, mb) for i in range(len(out_tensors_buffers))])
+    out_tensors_keys.append([gen_pull_key(i, mb) for i in range(len(o_tensors))])
 
 
 print_queue = Queue()
