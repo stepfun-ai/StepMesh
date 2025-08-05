@@ -72,6 +72,19 @@ make af
 pip3 install -v -e .
 ```
 
+Build without cuda
+
+```bash
+
+# Build AF library
+USE_CUDA=0 make af
+
+# Build and install Fserver （AF's Python SDK）
+USE_CUDA=0 pip3 install -v -e .
+
+```
+
+
 ## Concepts
 
 In StepMesh, there are three roles: worker, server and scheduler. Each role is an independent process.

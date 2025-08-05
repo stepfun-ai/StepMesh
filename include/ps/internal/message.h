@@ -11,10 +11,10 @@
 #include <vector>
 
 #ifdef DMLC_USE_CUDA
+#include <ATen/cuda/CUDAEvent.h>
 #include <cuda_runtime.h>
 #endif  // DMLC_USE_CUDA
 #ifdef STEPMESH_USE_TORCH
-#include <ATen/cuda/CUDAEvent.h>
 #endif  // STEPMESH_USE_TORCH
 
 #include "ps/internal/backend.h"

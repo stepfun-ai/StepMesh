@@ -72,9 +72,14 @@ inline Node::Role GetRole(const std::string &role_str) {
 inline void _StartPS(int customer_id, Node::Role role, int rank,
                      bool do_barrier, const char *argv0, int instance_idx) {
   if (role == Node::WORKER) {
+    BindCpuCore(0, 1);
     Postoffice::GetWorker(instance_idx)
         ->Start(customer_id, role, rank, do_barrier, argv0);
-  } else if (role == Node::SERVER || role == Node::SCHEDULER) {
+  } else if (role == Node::SERVER) {
+    BindCpuCore(0, 1);
+    Postoffice::GetServer(instance_idx)
+        ->Start(customer_id, role, rank, do_barrier, argv0);
+  } else if (role == Node::SCHEDULER) {
     Postoffice::GetServer(instance_idx)
         ->Start(customer_id, role, rank, do_barrier, argv0);
   } else {
@@ -133,10 +138,12 @@ inline void _StartPSGroup(int customer_id, std::vector<int> worker_ranks,
 inline void StartPS(int customer_id, Node::Role role, int rank, bool do_barrier,
                     const char *argv0 = nullptr) {
   Backend::Register("CPU", new CpuBackend());
-  Backend::Register("GPU", new GpuBackend());
-  int group_size = 1;
 
-  BindCpuCore(0, 1);
+#ifdef DMLC_USE_CUDA
+  Backend::Register("GPU", new GpuBackend());
+#endif
+
+  int group_size = 1;
 
   Environment::Get()->find("DMLC_GROUP_SIZE", &group_size, group_size);
   Postoffice::Init(role);

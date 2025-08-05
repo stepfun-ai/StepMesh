@@ -55,7 +55,7 @@ void Customer::WaitRequest(int timestamp) {
     if (spin_count < kMaxSpinCount) {
       spin_count++;
     } else {
-      _mm_pause();
+      // _mm_pause();
     }
   }
 #ifdef STEPMESH_ENABLE_TRACE

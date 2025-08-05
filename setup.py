@@ -26,16 +26,36 @@ __PS_PATH__ = f'{Path.cwd()}'
 
 if __name__ == "__main__":
     cc_flag = []
-    bare_metal_major, bare_metal_minor = \
-        _get_cuda_bare_metal_version(cpp_extension.CUDA_HOME)
-    if int(bare_metal_major) >= 11:
-        cc_flag.append('-gencode')
-        cc_flag.append('arch=compute_80,code=sm_80')
-        if int(bare_metal_minor) >= 8 or int(bare_metal_major) >= 12:
-            cc_flag.append('-gencode')
-            cc_flag.append('arch=compute_90,code=sm_90')
-    
+
     torch_cxx11_abi = torch.compiled_with_cxx11_abi()
+    use_cuda = os.environ.get("USE_CUDA",'1')=='1'
+    extra_link = ['-lrdmacm', '-libverbs']
+    extra_compile_args={
+            'cxx': [
+                '-O3', '-fPIC', 
+                f'-I{__PS_PATH__}/include', 
+                f'-D_GLIBCXX_USE_CXX11_ABI={str(int(torch_cxx11_abi))}',
+                '-DDMLC_USE_ZMQ',
+                '-DSTEPMESH_USE_GDR',
+                '-DDMLC_USE_RDMA', 
+                '-DSTEPMESH_USE_TORCH',
+                '-fvisibility=hidden',
+                ],
+                'nvcc': [],
+                }
+    if use_cuda:
+        extra_link += ['-lcuda', '-lcudart']
+        extra_compile_args['cxx'] += ['-DDMLC_USE_CUDA',]
+        extra_compile_args['nvcc'] = ['-O3', '-gencode', 'arch=compute_70,code=sm_70', 
+                '--use_fast_math'] + cc_flag
+        bare_metal_major, bare_metal_minor = \
+            _get_cuda_bare_metal_version(cpp_extension.CUDA_HOME)
+        if int(bare_metal_major) >= 11:
+            cc_flag.append('-gencode')
+            cc_flag.append('arch=compute_80,code=sm_80')
+            if int(bare_metal_minor) >= 8 or int(bare_metal_major) >= 12:
+                cc_flag.append('-gencode')
+                cc_flag.append('arch=compute_90,code=sm_90')
     setup(
         name='FServer',
         description='A Remote FFN Server Implementation for AF Disaggregation',
@@ -49,22 +69,8 @@ if __name__ == "__main__":
                 [
                     __SRC_PATH__ + 'ops.cc',
                 ],
-                
-                extra_compile_args={
-                    'cxx': [
-                        '-O3', '-fPIC', 
-                        f'-I{__PS_PATH__}/include', 
-                        f'-D_GLIBCXX_USE_CXX11_ABI={str(int(torch_cxx11_abi))}',
-                        '-DDMLC_USE_ZMQ',
-                        '-DDMLC_USE_CUDA', 
-                        '-DSTEPMESH_USE_GDR',
-                        '-DDMLC_USE_RDMA', 
-                        '-DSTEPMESH_USE_TORCH',
-                    ],
-                    'nvcc': ['-O3', '-gencode', 'arch=compute_70,code=sm_70', 
-                                '--use_fast_math'] + cc_flag,
-                },
-                extra_link_args=['-lrdmacm', '-libverbs'],
+                extra_compile_args=extra_compile_args,
+                extra_link_args=extra_link,
                 extra_objects=[f"{__PS_PATH__}/cmake_build/libaf.a", f"{__PS_PATH__}/deps/lib/libzmq.a"],
             )
         ],
