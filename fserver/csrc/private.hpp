@@ -13,7 +13,7 @@
 
 using namespace ps;
 #ifdef DMLC_USE_CUDA
-
+void pybind_private(py::module &m){}
 #else
 void pybind_private(py::module &m){}
 #endif //DMLC_USE_CUDA
