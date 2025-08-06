@@ -171,7 +171,7 @@ def print_thread():
 if is_worker:
     th = threading.Thread(target=print_thread)
     th.start()
-    f.barrier(True, True)
+    f.barrier(False, True)
     q = Queue()
     time_list = []
     net_cost_list = [[] for _ in range(bsz + 1 + bsz)]
