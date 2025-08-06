@@ -184,12 +184,12 @@ void init() {
   Backend::Get()->SetDevice(gpu_);
   if (role_ == Node::WORKER) {
     fworker_ = new AFTensorWorker(instance_id_);
-    barrier(true, true);
+    ps::Postoffice::GetWorker(instance_id_)->DoBarrier(0, ps::kServerGroup + ps::kWorkerGroup, true);
   } else if (role_ == Node::SERVER) {
     fserver_ = new AFTensorServer(instance_id_);
     fserver_->SetRequestHandle(RequestHandler);
     ps::RegisterExitCallback([]() { delete fserver_; });
-    barrier(true, true);
+    ps::Postoffice::GetServer(instance_id_)->DoBarrier(0, ps::kServerGroup + ps::kWorkerGroup, true);
   }
 }
 
