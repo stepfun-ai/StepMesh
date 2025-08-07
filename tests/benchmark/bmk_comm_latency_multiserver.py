@@ -202,7 +202,7 @@ if is_worker:
 elif is_server:
     ret_buffer = torch.rand([65535, dim], dtype=torch.bfloat16, device='cuda')
     count = 0
-
+    f.barrier(True, False)
     def server():
         global count
         iter_count = 0

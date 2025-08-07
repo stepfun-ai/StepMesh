@@ -148,7 +148,7 @@ void wait(int handler) {
   fworker_->Wait(handler);
 }
 
-void barrier(bool include_server, bool include_worker) {
+void barrier(bool include_server, bool include_worker, bool instrance_barrier=true) {
   int node_group = 0;
   if (include_server) {
     node_group += ps::kServerGroup;
@@ -158,9 +158,9 @@ void barrier(bool include_server, bool include_worker) {
   }
 
   if (role_ == Node::WORKER && include_worker) {
-    ps::Postoffice::GetWorker(instance_id_)->Barrier(0, node_group);
+    ps::Postoffice::GetWorker(instance_id_)->DoBarrier(0, node_group, instrance_barrier);
   } else if (role_ == Node::SERVER && include_server) {
-    ps::Postoffice::GetServer(instance_id_)->Barrier(0, node_group);
+    ps::Postoffice::GetServer(instance_id_)->DoBarrier(0, node_group, instrance_barrier);
   } else {
     ps::Postoffice::Get()->Barrier(0, node_group);
   }
@@ -184,12 +184,12 @@ void init() {
   Backend::Get()->SetDevice(gpu_);
   if (role_ == Node::WORKER) {
     fworker_ = new AFTensorWorker(instance_id_);
-    ps::Postoffice::GetWorker(instance_id_)->DoBarrier(0, ps::kServerGroup + ps::kWorkerGroup, true);
+    barrier(true, true);
   } else if (role_ == Node::SERVER) {
     fserver_ = new AFTensorServer(instance_id_);
     fserver_->SetRequestHandle(RequestHandler);
     ps::RegisterExitCallback([]() { delete fserver_; });
-    ps::Postoffice::GetServer(instance_id_)->DoBarrier(0, ps::kServerGroup + ps::kWorkerGroup, true);
+    barrier(true, true);
   }
 }
 
@@ -261,7 +261,11 @@ void pybind_public(py::module &m){
   // fetch_trace needs gil_scoped_release
   m.def("fetch_trace", &fetch_trace, py::call_guard<py::gil_scoped_release>());
   m.def("get_all_handlers", &get_all_handlers, py::call_guard<py::none>());
-  m.def("barrier", &barrier, py::call_guard<py::none>());
+  m.def("barrier", &barrier, 
+    py::arg("include_server"),
+    py::arg("include_client"),
+    py::arg("instance_barrier") = true,
+    py::call_guard<py::none>());
   m.def("get_nanosecond", &get_nanosecond, py::call_guard<py::none>());
 }
 
