@@ -237,6 +237,13 @@ class Postoffice {
    */
   void Barrier(int customer_id, int node_group);
   /**
+   * \brief barrier for all postoffice instances or groups
+   * \param customer_id the id of the customer
+   * \param node_id the barrier group id
+   * \param instance_barrier whether it's for all postoffice instances or groups
+   */
+  void DoBarrier(int customer_id, int node_group, bool instance_barrier);
+  /**
    * \brief process a control message, called by van
    * \param the received message
    */
@@ -266,14 +273,6 @@ class Postoffice {
    */
   explicit Postoffice(int instance_idx);
   ~Postoffice() { delete van_; }
-
-  /**
-   * \brief barrier for all postoffice instances or groups
-   * \param customer_id the id of the customer
-   * \param node_id the barrier group id
-   * \param instance_barrier whether it's for all postoffice instances or groups
-   */
-  void DoBarrier(int customer_id, int node_group, bool instance_barrier);
 
   static Postoffice* po_scheduler_;
   static std::mutex init_mu_;
