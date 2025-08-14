@@ -201,14 +201,14 @@ void register_recv_buffer(torch::Tensor& tensor,
 
 void stop() {
   if (role_ == Node::WORKER) {
-    ps::Postoffice::GetWorker(gpu_)->Barrier(0,
-        ps::kWorkerGroup + ps::kServerGroup + ps::kScheduler);
+    ps::Postoffice::GetWorker(gpu_)->DoBarrier(0,
+        ps::kWorkerGroup + ps::kServerGroup + ps::kScheduler, true);
   } else if (role_ == Node::SERVER) {
-    ps::Postoffice::GetServer(gpu_)->Barrier(0,
-        ps::kWorkerGroup + ps::kServerGroup + ps::kScheduler);
+    ps::Postoffice::GetServer(gpu_)->DoBarrier(0,
+        ps::kWorkerGroup + ps::kServerGroup + ps::kScheduler, true);
   } else {
-    ps::Postoffice::Get()->Barrier(0,
-        ps::kWorkerGroup + ps::kServerGroup + ps::kScheduler);
+    ps::Postoffice::Get()->DoBarrier(0,
+        ps::kWorkerGroup + ps::kServerGroup + ps::kScheduler, true);
   }
 
   ps::Finalize(0, role_, true);
