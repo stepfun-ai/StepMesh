@@ -38,9 +38,6 @@ int instance_id_ = 0;
 int num_worker_ = 1;
 uint64_t worker_mask_ = 0x1;
 
-typedef std::tuple<uint64_t, std::vector<torch::Tensor>, std::vector<uint64_t>>
-    ServerDataBatch;
-
 std::mutex mu_;
 uint64_t handler_counter_ = 0;
 std::unordered_map<uint64_t, AFTensorMeta> meta_map_;

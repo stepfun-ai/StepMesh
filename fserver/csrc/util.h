@@ -20,4 +20,6 @@
 
 #ifndef UTIL_H_
 #define  UTIL_H_
+typedef std::tuple<uint64_t, std::vector<torch::Tensor>, std::vector<uint64_t>>
+    ServerDataBatch;
 #endif  // UTIL_H_
