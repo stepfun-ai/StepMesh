@@ -228,7 +228,8 @@ class BackendMemoryAllocator {
 
 struct WRContext {
   WRContextType type;
-  struct ibv_mr *buffer;
+  void *buffer;
+  struct ibv_mr *ref_mr;
   void *private_data;
 };
 

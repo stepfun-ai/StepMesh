@@ -53,12 +53,16 @@ struct Endpoint {
 
   int inComingCount = 0;
   int kStartDepth = 128;
-  int kRxDepth = 256;
+  int kRxDepth = 128;
   int kReplyDepth = kRxDepth;
   int kMaxInlineSize;
   WRContext *rx_ctx;
   WRContext *start_ctx;
   WRContext *reply_ctx;
+
+  struct ibv_mr *rx_ctx_mr = nullptr;
+  struct ibv_mr *start_ctx_mr = nullptr;
+  struct ibv_mr *reply_ctx_mr = nullptr;
 
   ThreadsafeQueue<WRContext *> free_start_ctx;
   ThreadsafeQueue<WRContext *> free_reply_ctx;
@@ -95,27 +99,24 @@ struct Endpoint {
   }
 
   ~Endpoint() {
-    for (int i = 0; i < kRxDepth; ++i) {
-      if (!(rx_ctx[i].buffer)) {
-        continue;
-      }
-      free(rx_ctx[i].buffer->addr);
-      PS_CHECK_EQ(ibv_dereg_mr(rx_ctx[i].buffer), 0);
+    if (rx_ctx_mr) {
+      void *buf = rx_ctx_mr->addr;
+      PS_CHECK_EQ(ibv_dereg_mr(rx_ctx_mr), 0);
+      free(buf);
     }
 
-    for (int i = 0; i < kStartDepth; ++i) {
-      if (start_ctx[i].buffer) {
-        free(start_ctx[i].buffer->addr);
-        PS_CHECK_EQ(ibv_dereg_mr(start_ctx[i].buffer), 0);
-      }
+    if (start_ctx_mr) {
+      void *buf = start_ctx_mr->addr;
+      PS_CHECK_EQ(ibv_dereg_mr(start_ctx_mr), 0);
+      free(buf);
     }
 
-    for (int i = 0; i < kReplyDepth; ++i) {
-      if (reply_ctx[i].buffer) {
-        free(reply_ctx[i].buffer->addr);
-        PS_CHECK_EQ(ibv_dereg_mr(reply_ctx[i].buffer), 0);
-      }
+    if (reply_ctx_mr) {
+      void *buf = reply_ctx_mr->addr;
+      PS_CHECK_EQ(ibv_dereg_mr(reply_ctx_mr), 0);
+      free(buf);
     }
+
     FOR_QPS {
       rdma_destroy_qp(cm_ids[qpIndex]);
       PS_CHECK_EQ(rdma_destroy_id(cm_ids[qpIndex]), 0) << strerror(errno);
@@ -151,24 +152,24 @@ struct Endpoint {
 
   void SetNodeID(int id) { node_id = id; }
 
-  void InitSendContextHelper(struct ibv_pd *pd, WRContext *ctx,
-                             ThreadsafeQueue<WRContext *> *queue, size_t num,
-                             WRContextType type) {
-    for (size_t i = 0; i < num; ++i) {
-      void *buf;
-      aligned_malloc(reinterpret_cast<void **>(&buf), kMempoolChunkSize);
-      PS_CHECK(buf);
-      struct ibv_mr *mr = ibv_reg_mr(pd, buf, kMempoolChunkSize, 0);
-      PS_CHECK(mr)
-          << "ibv_reg_mr failed: " << strerror(errno)
-          << "\nYou can try to reduce BYTEPS_RDMA_START_DEPTH (current "
-          << kStartDepth << ") or BYTEPS_RDMA_RX_DEPTH (current " << kRxDepth
-          << ").";
+  void InitWRContextHelper(struct ibv_pd *pd, WRContext *ctx,
+                             size_t num, WRContextType type,
+                             struct ibv_mr **mr, unsigned int access,
+                             ThreadsafeQueue<WRContext *> *queue = nullptr) {
+    char *buf;
+    aligned_malloc(reinterpret_cast<void **>(&buf), kMempoolChunkSize * num);
+    PS_CHECK(buf);
+    *mr = ibv_reg_mr(pd, buf, kMempoolChunkSize * num, access);
+    PS_CHECK(*mr) << "ibv_reg_mr failed: " << strerror(errno);
 
+    for (size_t i = 0; i < num; ++i) {
       ctx[i].type = type;
-      ctx[i].buffer = mr;
+      ctx[i].buffer = buf + i * kMempoolChunkSize;
+      ctx[i].ref_mr = *mr;
       ctx[i].private_data = this;
-      queue->Push(&ctx[i]);
+      if (queue) {
+        queue->Push(&ctx[i]);
+      }
     }
   }
 
@@ -193,32 +194,20 @@ struct Endpoint {
                   << ", qp=" << id->qp->qp_num << ", maxInline=" << kMaxInlineSize;
     if (inited == 0) {
       rdma_provider = provider;
-      InitSendContextHelper(pd, start_ctx, &free_start_ctx, kStartDepth,
-                            kRendezvousStartContext);
-      InitSendContextHelper(pd, reply_ctx, &free_reply_ctx, kReplyDepth,
-                            kRendezvousReplyContext);
+      InitWRContextHelper(pd, start_ctx, kStartDepth, kRendezvousStartContext,
+                          &start_ctx_mr, 0, &free_start_ctx);
+      InitWRContextHelper(pd, reply_ctx, kReplyDepth, kRendezvousReplyContext,
+                          &reply_ctx_mr, 0, &free_reply_ctx);
+      InitWRContextHelper(pd, rx_ctx, kRxDepth, kReceiveContext, &rx_ctx_mr,
+                          IBV_ACCESS_LOCAL_WRITE);
     }
 
+    // As only one QP will use the ctx buffer, other QPs just for imm receive.
+    // It is OK for all QPs to repeate post recv the rx_ctx. The same buffers
+    // but more rqe.
     for (int i = 0; i < kRxDepth; ++i) {
-      if (inited == 0) {
-        void *buf;
-        aligned_malloc(reinterpret_cast<void **>(&buf), kMempoolChunkSize);
-        PS_CHECK(buf);
-        struct ibv_mr *mr =
-            ibv_reg_mr(pd, buf, kMempoolChunkSize, IBV_ACCESS_LOCAL_WRITE);
-        PS_CHECK(mr)
-            << "ibv_reg_mr failed: " << strerror(errno)
-            << "\nYou can try to reduce BYTEPS_RDMA_START_DEPTH (default 128)"
-            << " or BYTEPS_RDMA_RX_DEPTH (default 2048)";
-
-        rx_ctx[i].type = kReceiveContext;
-        rx_ctx[i].buffer = mr;
-        rx_ctx[i].private_data = this;
-      }
-    }
-    for (int i = 0; i < kRxDepth / QP_NUM; ++i) {
       if (inited < QP_NUM) {
-        PostRecv(&rx_ctx[i + inited * QP_NUM], id);
+        PostRecv(&rx_ctx[i], id);
       }
     }
     inited++;
@@ -248,9 +237,9 @@ struct Endpoint {
     memset(&wr, 0, sizeof(wr));
 
     struct ibv_sge sge;
-    sge.addr = reinterpret_cast<uint64_t>(ctx->buffer->addr);
+    sge.addr = reinterpret_cast<uint64_t>(ctx->buffer);
     sge.length = kMempoolChunkSize;
-    sge.lkey = ctx->buffer->lkey;
+    sge.lkey = ctx->ref_mr->lkey;
 
     wr.wr_id = reinterpret_cast<uint64_t>(ctx);
     wr.next = nullptr;
@@ -398,7 +387,7 @@ class RDMATransport : public Transport {
     endpoint_->free_start_ctx.WaitAndPop(&context);
 
     RendezvousStart *req =
-        reinterpret_cast<RendezvousStart *>(context->buffer->addr);
+        reinterpret_cast<RendezvousStart *>(context->buffer);
     req->meta_len = msg_buf->inline_len;
     req->origin_addr = reinterpret_cast<uint64_t>(msg_buf);
     req->data_num = msg_buf->data.size();
@@ -409,7 +398,7 @@ class RDMATransport : public Transport {
 
     struct ibv_sge sge;
     sge.addr = reinterpret_cast<uint64_t>(req);
-    sge.lkey = context->buffer->lkey;
+    sge.lkey = context->ref_mr->lkey;
     sge.length = sizeof(RendezvousStart);
 
     struct ibv_send_wr wr, *bad_wr = nullptr;
@@ -478,7 +467,7 @@ class RDMATransport : public Transport {
       WRContext *reply_ctx_ptr = nullptr;
       endpoint_->free_reply_ctx.WaitAndPop(&reply_ctx_ptr);
       auto *resp =
-          reinterpret_cast<RendezvousReply *>(reply_ctx_ptr->buffer->addr);
+          reinterpret_cast<RendezvousReply *>(reply_ctx_ptr->buffer);
 
       // Populate reply with addresses and rkeys for both buffers
       resp->meta_addr = reinterpret_cast<uint64_t>(buf_ctx->meta_buffer);
@@ -503,7 +492,7 @@ class RDMATransport : public Transport {
       struct ibv_sge sge;
       sge.addr = reinterpret_cast<uint64_t>(resp);
       sge.length = sizeof(RendezvousReply);
-      sge.lkey = reply_ctx_ptr->buffer->lkey;
+      sge.lkey = reply_ctx_ptr->ref_mr->lkey;
       struct ibv_send_wr wr, *bad_wr = nullptr;
       memset(&wr, 0, sizeof(wr));
       wr.wr_id = reinterpret_cast<uint64_t>(reply_ctx_ptr);
@@ -531,7 +520,7 @@ class RDMATransport : public Transport {
     WRContext *reply_ctx_ptr = nullptr;
     endpoint_->free_reply_ctx.WaitAndPop(&reply_ctx_ptr);
     RendezvousReply *resp =
-        reinterpret_cast<RendezvousReply *>(reply_ctx_ptr->buffer->addr);
+        reinterpret_cast<RendezvousReply *>(reply_ctx_ptr->buffer);
 
     // In GDR mode, client still uses single buffer logic,
     // so we populate the single addr/rkey
@@ -550,7 +539,7 @@ class RDMATransport : public Transport {
     struct ibv_sge sge;
     sge.addr = reinterpret_cast<uint64_t>(resp);
     sge.length = sizeof(RendezvousReply);
-    sge.lkey = reply_ctx_ptr->buffer->lkey;
+    sge.lkey = reply_ctx_ptr->ref_mr->lkey;
     struct ibv_send_wr wr, *bad_wr = nullptr;
     memset(&wr, 0, sizeof(wr));
     wr.wr_id = reinterpret_cast<uint64_t>(reply_ctx_ptr);

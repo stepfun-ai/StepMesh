@@ -829,16 +829,15 @@ class RDMAVan : public Van {
           case IBV_WC_RECV: {
             PS_CHECK(wc[i].wc_flags & IBV_WC_WITH_IMM);
             uint32_t imm = wc[i].imm_data;
-            struct ibv_mr *mr = context->buffer;
 
             if (imm == kRendezvousStart) {
               RendezvousStart *req =
-                  reinterpret_cast<RendezvousStart *>(mr->addr);
+                  reinterpret_cast<RendezvousStart *>(context->buffer);
               auto trans = PS_CHECK_NOTNULL(endpoint->GetTransport());
               trans->SendRendezvousReply(req, addr_pool_);
             } else if (imm == kRendezvousReply) {
               RendezvousReply *resp =
-                  reinterpret_cast<RendezvousReply *>(mr->addr);
+                  reinterpret_cast<RendezvousReply *>(context->buffer);
 
               uint64_t origin_addr = resp->origin_addr;
               uint32_t idx = resp->idx;
