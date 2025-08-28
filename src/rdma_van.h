@@ -732,6 +732,9 @@ class RDMAVan : public Van {
     context_ = context;
     PS_CHECK(context_) << "ibv_context* empty";
 
+    provider_ = RDMAProvider::GetProvider(context_);
+    PS_CHECK(provider_) << "failed to get rdma provider";
+
     pd_ = ibv_alloc_pd(context_);
     PS_CHECK(pd_) << "Failed to allocate protection domain";
 
@@ -774,13 +777,18 @@ class RDMAVan : public Van {
 
       PS_CHECK_GE(ne, 0);
       for (int i = 0; i < ne; ++i) {
-        PS_CHECK(wc[i].status == IBV_WC_SUCCESS)
-            << "Failed status \n"
-            << ibv_wc_status_str(wc[i].status) << " " << wc[i].status << " "
-            << static_cast<uint64_t>(wc[i].wr_id) << " " << wc[i].vendor_err
-            << " " << wc[i].opcode << " "
-            << (wc[i].opcode == IBV_WC_RECV ? "RECV" : "OTHER")
-            << " postoffice ptr: " << reinterpret_cast<void *>(postoffice_);
+        if (wc[i].status != IBV_WC_SUCCESS) {
+          if (provider_->ErrIgnore(&wc[i])) {
+            continue;
+          }
+          PS_LOG(FATAL) << "Failed status \n"
+                        << ibv_wc_status_str(wc[i].status) << " " << wc[i].status << " "
+                        << static_cast<uint64_t>(wc[i].wr_id) << " " << wc[i].vendor_err
+                        << " " << wc[i].opcode << " "
+                        << (wc[i].opcode == IBV_WC_RECV ? "RECV" : "OTHER")
+                        << " postoffice ptr: " << reinterpret_cast<void *>(postoffice_);
+        }
+
 
         // IBV_WC_RDMA_WRITE use msg_buf as the wr_id
         // so there won't be context and endpoint for this op
@@ -991,7 +999,7 @@ class RDMAVan : public Van {
       InitContext(id->verbs);
     }
 
-    endpoint->Init(cq_, pd_, id);
+    endpoint->Init(cq_, pd_, provider_, id);
 
     bool is_local_node =
         disable_ipc_
@@ -1045,7 +1053,7 @@ class RDMAVan : public Van {
     if (context_ == nullptr) {
       InitContext(id->verbs);
     }
-    endpoint->Init(cq_, pd_, id);
+    endpoint->Init(cq_, pd_, provider_, id);
     endpoint->inComingCount++;
     RequestContext ctx;
     ctx.node = static_cast<uint32_t>(my_node_.id);
@@ -1122,6 +1130,7 @@ class RDMAVan : public Van {
 
   struct rdma_event_channel *event_channel_ = nullptr;
   struct ibv_context *context_ = nullptr;
+  RDMAProvider *provider_ = nullptr;
 
   // ibverbs protection domain
   struct ibv_pd *pd_ = nullptr;
