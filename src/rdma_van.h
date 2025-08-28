@@ -782,13 +782,14 @@ class RDMAVan : public Van {
             continue;
           }
           PS_LOG(FATAL) << "Failed status \n"
-                        << ibv_wc_status_str(wc[i].status) << " " << wc[i].status << " "
-                        << static_cast<uint64_t>(wc[i].wr_id) << " " << wc[i].vendor_err
-                        << " " << wc[i].opcode << " "
+                        << ibv_wc_status_str(wc[i].status) << " "
+                        << wc[i].status << " "
+                        << static_cast<uint64_t>(wc[i].wr_id) << " "
+                        << wc[i].vendor_err << " " << wc[i].opcode << " "
                         << (wc[i].opcode == IBV_WC_RECV ? "RECV" : "OTHER")
-                        << " postoffice ptr: " << reinterpret_cast<void *>(postoffice_);
+                        << " postoffice ptr: "
+                        << reinterpret_cast<void *>(postoffice_);
         }
-
 
         // IBV_WC_RDMA_WRITE use msg_buf as the wr_id
         // so there won't be context and endpoint for this op

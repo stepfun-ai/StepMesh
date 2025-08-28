@@ -152,10 +152,10 @@ struct Endpoint {
 
   void SetNodeID(int id) { node_id = id; }
 
-  void InitWRContextHelper(struct ibv_pd *pd, WRContext *ctx,
-                             size_t num, WRContextType type,
-                             struct ibv_mr **mr, unsigned int access,
-                             ThreadsafeQueue<WRContext *> *queue = nullptr) {
+  void InitWRContextHelper(struct ibv_pd *pd, WRContext *ctx, size_t num,
+                           WRContextType type, struct ibv_mr **mr,
+                           unsigned int access,
+                           ThreadsafeQueue<WRContext *> *queue = nullptr) {
     char *buf;
     aligned_malloc(reinterpret_cast<void **>(&buf), kMempoolChunkSize * num);
     PS_CHECK(buf);
@@ -173,7 +173,8 @@ struct Endpoint {
     }
   }
 
-  void Init(struct ibv_cq *cq, struct ibv_pd *pd, RDMAProvider *provider, rdma_cm_id *id = nullptr) {
+  void Init(struct ibv_cq *cq, struct ibv_pd *pd, RDMAProvider *provider,
+            rdma_cm_id *id = nullptr) {
     struct ibv_qp_init_attr attr;
     memset(&attr, 0, sizeof(ibv_qp_init_attr));
     attr.send_cq = cq;
@@ -191,7 +192,8 @@ struct Endpoint {
     kMaxInlineSize = attr.cap.max_inline_data;
 
     PS_LOG(TRACE) << "qp created: pd=" << pd << " , cq=" << cq
-                  << ", qp=" << id->qp->qp_num << ", maxInline=" << kMaxInlineSize;
+                  << ", qp=" << id->qp->qp_num
+                  << ", maxInline=" << kMaxInlineSize;
     if (inited == 0) {
       rdma_provider = provider;
       InitWRContextHelper(pd, start_ctx, kStartDepth, kRendezvousStartContext,
@@ -386,8 +388,7 @@ class RDMATransport : public Transport {
     WRContext *context = nullptr;
     endpoint_->free_start_ctx.WaitAndPop(&context);
 
-    RendezvousStart *req =
-        reinterpret_cast<RendezvousStart *>(context->buffer);
+    RendezvousStart *req = reinterpret_cast<RendezvousStart *>(context->buffer);
     req->meta_len = msg_buf->inline_len;
     req->origin_addr = reinterpret_cast<uint64_t>(msg_buf);
     req->data_num = msg_buf->data.size();
@@ -466,8 +467,7 @@ class RDMATransport : public Transport {
 
       WRContext *reply_ctx_ptr = nullptr;
       endpoint_->free_reply_ctx.WaitAndPop(&reply_ctx_ptr);
-      auto *resp =
-          reinterpret_cast<RendezvousReply *>(reply_ctx_ptr->buffer);
+      auto *resp = reinterpret_cast<RendezvousReply *>(reply_ctx_ptr->buffer);
 
       // Populate reply with addresses and rkeys for both buffers
       resp->meta_addr = reinterpret_cast<uint64_t>(buf_ctx->meta_buffer);

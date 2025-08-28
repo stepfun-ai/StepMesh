@@ -18,11 +18,12 @@
 
 #ifdef DMLC_USE_RDMA
 
-#include <string>
 #include <rdma/rdma_cma.h>
 
-#include "dmlc/logging.h"
+#include <string>
+
 #include "./ibvwarp.h"
+#include "dmlc/logging.h"
 
 namespace ps {
 
@@ -31,14 +32,14 @@ class RDMAProvider {
   static RDMAProvider *GetProvider(struct ibv_context *context);
 
   virtual int InlineSize() = 0;
-  virtual int SetQPLag(struct ibv_qp* qp, int port_num) = 0;
+  virtual int SetQPLag(struct ibv_qp *qp, int port_num) = 0;
   virtual int ErrIgnore(struct ibv_wc *wc) = 0;
 
  protected:
   RDMAProvider() {}
 };
 
-class eRDMAProvider: public RDMAProvider {
+class eRDMAProvider : public RDMAProvider {
  public:
   static inline RDMAProvider *Get() {
     static RDMAProvider *inst_ptr = new eRDMAProvider();
@@ -62,12 +63,11 @@ class eRDMAProvider: public RDMAProvider {
   }
 
  private:
-  explicit eRDMAProvider() {}
+  eRDMAProvider() {}
 };
 
-class Mlx5Provider: public RDMAProvider {
+class Mlx5Provider : public RDMAProvider {
  public:
-
   static inline RDMAProvider *Get() {
     static RDMAProvider *inst_ptr = new Mlx5Provider();
     return inst_ptr;
@@ -94,7 +94,7 @@ class Mlx5Provider: public RDMAProvider {
   }
 
  private:
-  explicit Mlx5Provider() {
+  Mlx5Provider() {
     if (wrap_ibv_symbols() != 1) {
       PS_LOG(WARNING) << "Load mlx5 symbols fails.";
     }
