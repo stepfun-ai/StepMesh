@@ -19,6 +19,7 @@
 
 #ifdef DMLC_USE_RDMA
 
+#include <algorithm>
 #include <condition_variable>
 #include <cstddef>
 #include <memory>
@@ -27,7 +28,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "./ibvwarp.h"
+#include "./rdma_provider.h"
 #include "./rdma_utils.h"
 #include "dmlc/logging.h"
 #include "ps/internal/multi_qp.h"
@@ -52,21 +53,25 @@ struct Endpoint {
 
   int inComingCount = 0;
   int kStartDepth = 128;
-  int kRxDepth = 256;
+  int kRxDepth = 128;
   int kReplyDepth = kRxDepth;
+  int kMaxInlineSize;
   WRContext *rx_ctx;
   WRContext *start_ctx;
   WRContext *reply_ctx;
 
+  struct ibv_mr *rx_ctx_mr = nullptr;
+  struct ibv_mr *start_ctx_mr = nullptr;
+  struct ibv_mr *reply_ctx_mr = nullptr;
+
   ThreadsafeQueue<WRContext *> free_start_ctx;
   ThreadsafeQueue<WRContext *> free_reply_ctx;
+
+  RDMAProvider *rdma_provider = nullptr;
 
   uint8_t inited = 0;
 
   Endpoint() : node_id(Node::kEmpty), rx_ctx() {
-    if (wrap_ibv_symbols() != 1) {
-      PS_LOG(WARNING) << "Load mlx5 symbols fails.";
-    }
     FOR_QPS {
       cm_ids[qpIndex] = nullptr;
       status_list[qpIndex] = IDLE;
@@ -94,27 +99,24 @@ struct Endpoint {
   }
 
   ~Endpoint() {
-    for (int i = 0; i < kRxDepth; ++i) {
-      if (!(rx_ctx[i].buffer)) {
-        continue;
-      }
-      free(rx_ctx[i].buffer->addr);
-      PS_CHECK_EQ(ibv_dereg_mr(rx_ctx[i].buffer), 0);
+    if (rx_ctx_mr) {
+      void *buf = rx_ctx_mr->addr;
+      PS_CHECK_EQ(ibv_dereg_mr(rx_ctx_mr), 0);
+      free(buf);
     }
 
-    for (int i = 0; i < kStartDepth; ++i) {
-      if (start_ctx[i].buffer) {
-        free(start_ctx[i].buffer->addr);
-        PS_CHECK_EQ(ibv_dereg_mr(start_ctx[i].buffer), 0);
-      }
+    if (start_ctx_mr) {
+      void *buf = start_ctx_mr->addr;
+      PS_CHECK_EQ(ibv_dereg_mr(start_ctx_mr), 0);
+      free(buf);
     }
 
-    for (int i = 0; i < kReplyDepth; ++i) {
-      if (reply_ctx[i].buffer) {
-        free(reply_ctx[i].buffer->addr);
-        PS_CHECK_EQ(ibv_dereg_mr(reply_ctx[i].buffer), 0);
-      }
+    if (reply_ctx_mr) {
+      void *buf = reply_ctx_mr->addr;
+      PS_CHECK_EQ(ibv_dereg_mr(reply_ctx_mr), 0);
+      free(buf);
     }
+
     FOR_QPS {
       rdma_destroy_qp(cm_ids[qpIndex]);
       PS_CHECK_EQ(rdma_destroy_id(cm_ids[qpIndex]), 0) << strerror(errno);
@@ -150,28 +152,29 @@ struct Endpoint {
 
   void SetNodeID(int id) { node_id = id; }
 
-  void InitSendContextHelper(struct ibv_pd *pd, WRContext *ctx,
-                             ThreadsafeQueue<WRContext *> *queue, size_t num,
-                             WRContextType type) {
-    for (size_t i = 0; i < num; ++i) {
-      void *buf;
-      aligned_malloc(reinterpret_cast<void **>(&buf), kMempoolChunkSize);
-      PS_CHECK(buf);
-      struct ibv_mr *mr = ibv_reg_mr(pd, buf, kMempoolChunkSize, 0);
-      PS_CHECK(mr)
-          << "ibv_reg_mr failed: " << strerror(errno)
-          << "\nYou can try to reduce BYTEPS_RDMA_START_DEPTH (current "
-          << kStartDepth << ") or BYTEPS_RDMA_RX_DEPTH (current " << kRxDepth
-          << ").";
+  void InitWRContextHelper(struct ibv_pd *pd, WRContext *ctx, size_t num,
+                           WRContextType type, struct ibv_mr **mr,
+                           unsigned int access,
+                           ThreadsafeQueue<WRContext *> *queue = nullptr) {
+    char *buf;
+    aligned_malloc(reinterpret_cast<void **>(&buf), kMempoolChunkSize * num);
+    PS_CHECK(buf);
+    *mr = ibv_reg_mr(pd, buf, kMempoolChunkSize * num, access);
+    PS_CHECK(*mr) << "ibv_reg_mr failed: " << strerror(errno);
 
+    for (size_t i = 0; i < num; ++i) {
       ctx[i].type = type;
-      ctx[i].buffer = mr;
+      ctx[i].buffer = buf + i * kMempoolChunkSize;
+      ctx[i].ref_mr = *mr;
       ctx[i].private_data = this;
-      queue->Push(&ctx[i]);
+      if (queue) {
+        queue->Push(&ctx[i]);
+      }
     }
   }
 
-  void Init(struct ibv_cq *cq, struct ibv_pd *pd, rdma_cm_id *id = nullptr) {
+  void Init(struct ibv_cq *cq, struct ibv_pd *pd, RDMAProvider *provider,
+            rdma_cm_id *id = nullptr) {
     struct ibv_qp_init_attr attr;
     memset(&attr, 0, sizeof(ibv_qp_init_attr));
     attr.send_cq = cq;
@@ -180,42 +183,33 @@ struct Endpoint {
     attr.cap.max_recv_wr = kRxDepth;
     attr.cap.max_send_sge = kSGEntry;
     attr.cap.max_recv_sge = kSGEntry;
-    attr.cap.max_inline_data = 256;
+    attr.cap.max_inline_data = provider->InlineSize();
     attr.qp_type = IBV_QPT_RC;
     attr.sq_sig_all = 0;
     PS_CHECK_EQ(rdma_create_qp(id, pd, &attr), 0)
         << "Create RDMA queue pair failed: " << strerror(errno);
     id->pd = pd;
+    kMaxInlineSize = attr.cap.max_inline_data;
 
     PS_LOG(TRACE) << "qp created: pd=" << pd << " , cq=" << cq
-                  << ", qp=" << id->qp->qp_num;
+                  << ", qp=" << id->qp->qp_num
+                  << ", maxInline=" << kMaxInlineSize;
     if (inited == 0) {
-      InitSendContextHelper(pd, start_ctx, &free_start_ctx, kStartDepth,
-                            kRendezvousStartContext);
-      InitSendContextHelper(pd, reply_ctx, &free_reply_ctx, kReplyDepth,
-                            kRendezvousReplyContext);
+      rdma_provider = provider;
+      InitWRContextHelper(pd, start_ctx, kStartDepth, kRendezvousStartContext,
+                          &start_ctx_mr, 0, &free_start_ctx);
+      InitWRContextHelper(pd, reply_ctx, kReplyDepth, kRendezvousReplyContext,
+                          &reply_ctx_mr, 0, &free_reply_ctx);
+      InitWRContextHelper(pd, rx_ctx, kRxDepth, kReceiveContext, &rx_ctx_mr,
+                          IBV_ACCESS_LOCAL_WRITE);
     }
 
+    // As only one QP will use the ctx buffer, other QPs just for imm receive.
+    // It is OK for all QPs to repeate post recv the rx_ctx. The same buffers
+    // but more rqe.
     for (int i = 0; i < kRxDepth; ++i) {
-      if (inited == 0) {
-        void *buf;
-        aligned_malloc(reinterpret_cast<void **>(&buf), kMempoolChunkSize);
-        PS_CHECK(buf);
-        struct ibv_mr *mr =
-            ibv_reg_mr(pd, buf, kMempoolChunkSize, IBV_ACCESS_LOCAL_WRITE);
-        PS_CHECK(mr)
-            << "ibv_reg_mr failed: " << strerror(errno)
-            << "\nYou can try to reduce BYTEPS_RDMA_START_DEPTH (default 128)"
-            << " or BYTEPS_RDMA_RX_DEPTH (default 2048)";
-
-        rx_ctx[i].type = kReceiveContext;
-        rx_ctx[i].buffer = mr;
-        rx_ctx[i].private_data = this;
-      }
-    }
-    for (int i = 0; i < kRxDepth / QP_NUM; ++i) {
       if (inited < QP_NUM) {
-        PostRecv(&rx_ctx[i + inited * QP_NUM], id);
+        PostRecv(&rx_ctx[i], id);
       }
     }
     inited++;
@@ -227,21 +221,14 @@ struct Endpoint {
 
     if (val == 1) {
       multi_qp_ = true;
+      PS_CHECK(rdma_provider);
       FOR_QPS {
         int lag = 1 + qpIndex % 2;
-        int ret = wrap_mlx5dv_modify_qp_lag_port(cm_ids[qpIndex]->qp, lag);
+        int ret = rdma_provider->SetQPLag(cm_ids[qpIndex]->qp, lag);
         if (ret != 1) {
-          PS_LOG(INFO) << "Failed to mlx5dv_modify_qp_lag_port qp ["
+          PS_LOG(INFO) << "Failed to SetQPLag qp ["
                        << cm_ids[qpIndex]->qp->qp_num << "] to port: " << lag
                        << ", qp type: " << cm_ids[qpIndex]->qp->qp_type;
-        } else {
-          uint8_t set_port = 0xff, act_port = 0xff;
-          wrap_mlx5dv_query_qp_lag_port(cm_ids[qpIndex]->qp, &set_port,
-                                        &act_port);
-          PS_LOG(INFO) << "QP LAG Port: QP: " << cm_ids[qpIndex]->qp->qp_num
-                       << ", Modify Port: " << lag
-                       << ", Set to Port: " << static_cast<int>(set_port)
-                       << ", Active Port: " << static_cast<int>(act_port);
         }
       }
     }
@@ -252,9 +239,9 @@ struct Endpoint {
     memset(&wr, 0, sizeof(wr));
 
     struct ibv_sge sge;
-    sge.addr = reinterpret_cast<uint64_t>(ctx->buffer->addr);
+    sge.addr = reinterpret_cast<uint64_t>(ctx->buffer);
     sge.length = kMempoolChunkSize;
-    sge.lkey = ctx->buffer->lkey;
+    sge.lkey = ctx->ref_mr->lkey;
 
     wr.wr_id = reinterpret_cast<uint64_t>(ctx);
     wr.next = nullptr;
@@ -310,6 +297,9 @@ class RDMATransport : public Transport {
     allocator_ = PS_CHECK_NOTNULL(allocator);
     pagesize_ = sysconf(_SC_PAGESIZE);
 
+    PS_CHECK_GT(endpoint_->kMaxInlineSize, 0);
+    max_inline_size_ = endpoint_->kMaxInlineSize;
+
     postoffice_ = postoffice;
     is_server_ = postoffice_->is_server();
 #ifdef STEPMESH_USE_GDR
@@ -342,32 +332,53 @@ class RDMATransport : public Transport {
                                 uint32_t rkey, uint32_t idx,
                                 bool inline_write = false,
                                 struct ibv_send_wr *prev_wr = nullptr) {
-    struct ibv_sge sge;
-    sge.addr = reinterpret_cast<uint64_t>(msg_buf->inline_buf);
-    sge.length = msg_buf->inline_len;
-    sge.lkey = allocator_->LocalKey(msg_buf->inline_buf);
-
-    struct ibv_send_wr wr = {}, *bad_wr = nullptr;
-    memset(&wr, 0, sizeof(wr));
-    wr.wr_id = reinterpret_cast<uint64_t>(msg_buf);
-    wr.opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
-    wr.next = nullptr;
-    wr.imm_data = idx;
-    wr.send_flags = IBV_SEND_SIGNALED;
-    wr.sg_list = &sge;
-    wr.num_sge = 1;
-    wr.wr.rdma.remote_addr = remote_addr;
-    wr.wr.rdma.rkey = rkey;
+    struct ibv_send_wr wr[kRdmaMaxWRs], *bad_wr = nullptr;
+    struct ibv_sge sge[kRdmaMaxWRs];
+    uint32_t lkey = allocator_->LocalKey(msg_buf->inline_buf);
+    size_t remaining = msg_buf->inline_len, offset = 0, max_seg_len = 0;
+    int num_wr = 1, send_flags = 0;
 
     if (inline_write) {
-      wr.send_flags |= IBV_SEND_INLINE;
+      num_wr = DivUp(remaining, max_inline_size_);
+      max_seg_len = max_inline_size_;
+      send_flags = IBV_SEND_INLINE;
+    } else {
+      num_wr = 1;
+      max_seg_len = remaining;
+      send_flags = 0;
+    }
+
+    PS_CHECK_LE(num_wr, kRdmaMaxWRs)
+        << "too many wrs, send_len: " << msg_buf->inline_len
+        << " , max_inline: " << max_inline_size_;
+    memset(wr, 0, sizeof(struct ibv_send_wr) * num_wr);
+
+    for (int i = 0; i < num_wr; ++i) {
+      bool is_last = (i == (num_wr - 1));
+      size_t len = std::min(remaining, max_seg_len);
+      sge[i].addr = reinterpret_cast<uint64_t>(msg_buf->inline_buf + offset);
+      sge[i].length = len;
+      sge[i].lkey = lkey;
+
+      wr[i].wr_id = reinterpret_cast<uint64_t>(msg_buf);
+      wr[i].opcode = is_last ? IBV_WR_RDMA_WRITE_WITH_IMM : IBV_WR_RDMA_WRITE;
+      wr[i].next = is_last ? nullptr : &wr[i + 1];
+      wr[i].imm_data = is_last ? idx : 0;
+      wr[i].send_flags =
+          is_last ? (send_flags | IBV_SEND_SIGNALED) : send_flags;
+      wr[i].sg_list = &sge[i];
+      wr[i].num_sge = 1;
+      wr[i].wr.rdma.remote_addr = remote_addr + offset;
+      wr[i].wr.rdma.rkey = rkey;
+      offset += len;
+      remaining -= len;
     }
 
     if (prev_wr == nullptr) {
-      PS_CHECK_EQ(ibv_post_send(endpoint_->cm_ids[0]->qp, &wr, &bad_wr), 0)
+      PS_CHECK_EQ(ibv_post_send(endpoint_->cm_ids[0]->qp, wr, &bad_wr), 0)
           << "ibv_post_send failed.";
     } else {
-      prev_wr->next = &wr;
+      prev_wr->next = &wr[0];
       PS_CHECK_EQ(ibv_post_send(endpoint_->cm_ids[0]->qp, prev_wr, &bad_wr), 0)
           << "ibv_post_send failed.";
     }
@@ -377,8 +388,7 @@ class RDMATransport : public Transport {
     WRContext *context = nullptr;
     endpoint_->free_start_ctx.WaitAndPop(&context);
 
-    RendezvousStart *req =
-        reinterpret_cast<RendezvousStart *>(context->buffer->addr);
+    RendezvousStart *req = reinterpret_cast<RendezvousStart *>(context->buffer);
     req->meta_len = msg_buf->inline_len;
     req->origin_addr = reinterpret_cast<uint64_t>(msg_buf);
     req->data_num = msg_buf->data.size();
@@ -389,7 +399,7 @@ class RDMATransport : public Transport {
 
     struct ibv_sge sge;
     sge.addr = reinterpret_cast<uint64_t>(req);
-    sge.lkey = context->buffer->lkey;
+    sge.lkey = context->ref_mr->lkey;
     sge.length = sizeof(RendezvousStart);
 
     struct ibv_send_wr wr, *bad_wr = nullptr;
@@ -457,8 +467,7 @@ class RDMATransport : public Transport {
 
       WRContext *reply_ctx_ptr = nullptr;
       endpoint_->free_reply_ctx.WaitAndPop(&reply_ctx_ptr);
-      auto *resp =
-          reinterpret_cast<RendezvousReply *>(reply_ctx_ptr->buffer->addr);
+      auto *resp = reinterpret_cast<RendezvousReply *>(reply_ctx_ptr->buffer);
 
       // Populate reply with addresses and rkeys for both buffers
       resp->meta_addr = reinterpret_cast<uint64_t>(buf_ctx->meta_buffer);
@@ -483,7 +492,7 @@ class RDMATransport : public Transport {
       struct ibv_sge sge;
       sge.addr = reinterpret_cast<uint64_t>(resp);
       sge.length = sizeof(RendezvousReply);
-      sge.lkey = reply_ctx_ptr->buffer->lkey;
+      sge.lkey = reply_ctx_ptr->ref_mr->lkey;
       struct ibv_send_wr wr, *bad_wr = nullptr;
       memset(&wr, 0, sizeof(wr));
       wr.wr_id = reinterpret_cast<uint64_t>(reply_ctx_ptr);
@@ -511,7 +520,7 @@ class RDMATransport : public Transport {
     WRContext *reply_ctx_ptr = nullptr;
     endpoint_->free_reply_ctx.WaitAndPop(&reply_ctx_ptr);
     RendezvousReply *resp =
-        reinterpret_cast<RendezvousReply *>(reply_ctx_ptr->buffer->addr);
+        reinterpret_cast<RendezvousReply *>(reply_ctx_ptr->buffer);
 
     // In GDR mode, client still uses single buffer logic,
     // so we populate the single addr/rkey
@@ -530,7 +539,7 @@ class RDMATransport : public Transport {
     struct ibv_sge sge;
     sge.addr = reinterpret_cast<uint64_t>(resp);
     sge.length = sizeof(RendezvousReply);
-    sge.lkey = reply_ctx_ptr->buffer->lkey;
+    sge.lkey = reply_ctx_ptr->ref_mr->lkey;
     struct ibv_send_wr wr, *bad_wr = nullptr;
     memset(&wr, 0, sizeof(wr));
     wr.wr_id = reinterpret_cast<uint64_t>(reply_ctx_ptr);
@@ -839,6 +848,7 @@ class RDMATransport : public Transport {
 
  protected:
   size_t pagesize_ = 4096;
+  size_t max_inline_size_ = 0;
   Endpoint *endpoint_;
   MemoryAllocator *allocator_;
   BackendMemoryAllocator *mem_allocator_;

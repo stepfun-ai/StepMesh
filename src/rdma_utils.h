@@ -62,6 +62,7 @@ static const int kSGEntry = 1;
 static const int kTimeoutms = 1000;
 static const int kRdmaListenBacklog = 128;
 static const int kMaxHostnameLength = 16;
+static const int kRdmaMaxWRs = 12;
 
 // should have the same prefix with BytePS shared memory
 // for pcie reduce:  BytePS_Pcie_{pcie_id}_ShM_{JOB_ID}_{BYTEPS_KEY}
@@ -227,7 +228,8 @@ class BackendMemoryAllocator {
 
 struct WRContext {
   WRContextType type;
-  struct ibv_mr *buffer;
+  void *buffer;
+  struct ibv_mr *ref_mr;
   void *private_data;
 };
 
