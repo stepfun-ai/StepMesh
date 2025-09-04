@@ -29,8 +29,12 @@ if __name__ == "__main__":
 
     torch_cxx11_abi = torch.compiled_with_cxx11_abi()
     use_cuda = os.environ.get("USE_CUDA",'1')=='1'
+    use_rocm = os.environ.get("USE_ROCM",'1')=='1'
+    if use_rocm :
+        use_cuda = False
     extra_link = ['-lrdmacm', '-libverbs']
-    extra_compile_args={
+    if use_cuda:
+        extra_compile_args={
             'cxx': [
                 '-O3', '-fPIC', 
                 f'-I{__PS_PATH__}/include', 
@@ -43,7 +47,6 @@ if __name__ == "__main__":
                 ],
                 'nvcc': [],
                 }
-    if use_cuda:
         extra_link += ['-lcuda', '-lcudart']
         extra_compile_args['cxx'] += ['-DDMLC_USE_CUDA',]
         extra_compile_args['nvcc'] = ['-O3', '-gencode', 'arch=compute_70,code=sm_70', 
@@ -56,6 +59,24 @@ if __name__ == "__main__":
             if int(bare_metal_minor) >= 8 or int(bare_metal_major) >= 12:
                 cc_flag.append('-gencode')
                 cc_flag.append('arch=compute_90,code=sm_90')
+    if use_rocm:
+        extra_compile_args={
+            'cxx': [
+                '-O3', '-fPIC', 
+                f'-I{__PS_PATH__}/include', 
+                f'-D_GLIBCXX_USE_CXX11_ABI={str(int(torch_cxx11_abi))}',
+                '-DDMLC_USE_ZMQ',
+                '-DSTEPMESH_USE_GDR',
+                '-DDMLC_USE_RDMA', 
+                '-DSTEPMESH_USE_TORCH',
+                '-fvisibility=hidden',
+                ],
+                'hipcc': [],
+                }
+        extra_link += ['-lamdhip64', '-lhsa-runtime64']
+        extra_compile_args['cxx'] += ['-DDMLC_USE_ROCM',]
+        extra_compile_args['hipcc'] = ['-O3', '--use_fast_math'] + cc_flag
+
     setup(
         name='FServer',
         description='A Remote FFN Server Implementation for AF Disaggregation',

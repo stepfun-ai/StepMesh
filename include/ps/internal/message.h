@@ -14,6 +14,11 @@
 #include <ATen/cuda/CUDAEvent.h>
 #include <cuda_runtime.h>
 #endif  // DMLC_USE_CUDA
+#ifdef DMLC_USE_ROCM
+#include <ATen/hip/HIPEvent.h>
+#include <hip/hip_runtime.h>
+#include <hip/hip_runtime_api.h>
+#endif  // DMLC_USE_ROCM
 #ifdef STEPMESH_USE_TORCH
 #endif  // STEPMESH_USE_TORCH
 
