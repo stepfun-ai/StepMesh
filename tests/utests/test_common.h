@@ -19,6 +19,11 @@
   #include <ATen/cuda/CUDAEvent.h>
 #endif
 
+#ifdef DMLC_USE_ROCM
+  #include <ATen/hip/HIPContext.h>
+  #include <ATen/hip/HIPEvent.h> 
+#endif
+
 #include "ps/af_tensor_app.h"
 
 #include "ps/ps.h"
