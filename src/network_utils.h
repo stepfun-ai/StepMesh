@@ -335,18 +335,17 @@ static inline int GetAvailablePort(int num_ports, std::array<int, 32>* ports) {
  * \return 0 on failure or no cuda, 1 when getting the interface successfully
  */
 static inline int GetInterfaceAndIPByCurrentGpu(std::string* interface,
-                                                std::string* ip) {
+                                                std::string* ip, int* gpu) {
   interface->clear();
   ip->clear();
 
 #ifdef DMLC_USE_CUDA
-  int gpu = -1;
-  cudaGetDevice(&gpu);
-  if (gpu == -1) return 0;
+  cudaGetDevice(gpu);
+  if (*gpu == -1) return 0;
   char pciPath[512];
   char busId[16];
   cudaError_t status;
-  status = cudaDeviceGetPCIBusId(busId, 16, gpu);
+  status = cudaDeviceGetPCIBusId(busId, 16, *gpu);
   PS_CHECK_EQ(status, cudaSuccess) << "cudaDeviceGetPCIBusId failed"
                                    << " (" << cudaGetErrorString(status) << ")";
   for (int i = 0; i < 16; i++) busId[i] = std::tolower(busId[i]);
