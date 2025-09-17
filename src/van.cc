@@ -552,9 +552,10 @@ void Van::Start(int customer_id, bool standalone) {
       std::string interface;
       if (itf) interface = std::string(itf);
       if (interface == "auto" || interface == "AUTO") {
-        GetInterfaceAndIPByCurrentGpu(&interface, &ip);
-        PS_LOG(INFO) << "automatic detect interface and ip from gpu: "
-                     << interface << " (" << ip << ")";
+        int gpu = -1;
+        GetInterfaceAndIPByCurrentGpu(&interface, &ip, &gpu);
+        PS_LOG(INFO) << "automatic detect interface and ip from gpu(" << gpu
+                     << "): " << interface << " (" << ip << ")";
         Environment::Get()->set("DMLC_NODE_HOST", ip);
         Environment::Get()->set("DMLC_INTERFACE", interface);
       } else {
