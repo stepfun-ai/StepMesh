@@ -208,9 +208,7 @@ struct Endpoint {
     // It is OK for all QPs to repeate post recv the rx_ctx. The same buffers
     // but more rqe.
     for (int i = 0; i < kRxDepth; ++i) {
-      if (inited < QP_NUM) {
-        PostRecv(&rx_ctx[i], id);
-      }
+      PostRecv(&rx_ctx[i], id);
     }
     inited++;
   }
