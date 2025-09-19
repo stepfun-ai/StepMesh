@@ -31,6 +31,10 @@
 #ifdef DMLC_USE_CUDA
 #include <cuda_runtime.h>
 #endif
+#ifdef DMLC_USE_ROCM
+#include <hip/hip_runtime.h>
+#include <hip/hip_runtime_api.h>
+#endif
 
 #include "ps/internal/postoffice.h"
 #include "ps/internal/utils.h"
@@ -339,18 +343,34 @@ static inline int GetInterfaceAndIPByCurrentGpu(std::string* interface,
   interface->clear();
   ip->clear();
 
-#ifdef DMLC_USE_CUDA
-  cudaGetDevice(gpu);
-  if (*gpu == -1) return 0;
+
+#if defined(DMLC_USE_CUDA) || defined(DMLC_USE_ROCM)
+  int gpu = -1;
+  
+  #ifdef DMLC_USE_CUDA
+  cudaGetDevice(&gpu);
+  if (gpu == -1) return 0;
+  #endif
+  #ifdef DMLC_USE_ROCM
+  hipGetDevice(&gpu);
+  if (gpu == -1) return 0;
+  #endif
+  
   char pciPath[512];
-  char busId[16];
-  cudaError_t status;
-  status = cudaDeviceGetPCIBusId(busId, 16, *gpu);
-  PS_CHECK_EQ(status, cudaSuccess) << "cudaDeviceGetPCIBusId failed"
-                                   << " (" << cudaGetErrorString(status) << ")";
-  for (int i = 0; i < 16; i++) busId[i] = std::tolower(busId[i]);
-  snprintf(pciPath, sizeof(pciPath), "/sys/class/pci_bus/%.7s/device/%s/device",
-           busId, busId);
+  
+  #ifdef DMLC_USE_CUDA
+  cudaDeviceProp deviceProp = {};
+  cudaGetDeviceProperties(&deviceProp, gpu);
+  #endif
+  #ifdef DMLC_USE_ROCM
+  hipDeviceProp_t deviceProp = {};
+  hipGetDeviceProperties(&deviceProp, gpu);
+  #endif
+  
+  snprintf(pciPath, sizeof(pciPath),
+           "/sys/class/pci_bus/0000:%02x/device/0000:%02x:%02x.0/device",
+           deviceProp.pciBusID, deviceProp.pciBusID, deviceProp.pciDeviceID);
+
   char* path = realpath(pciPath, nullptr);
 
   if (path == nullptr) return 0;

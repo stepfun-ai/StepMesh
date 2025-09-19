@@ -1,8 +1,8 @@
-export SCHEDULER_BIN=${SCHEDULER_BIN:-./cmake_build/tests/utests/ut_scheduler}
-export SERVER_BIN=${SERVER_BIN:-./cmake_build/tests/utests/ut_server}
-export WORKER_BIN=${WORKER_BIN:-./cmake_build/tests/utests/ut_tensor_worker}
+export SCHEDULER_BIN=${SCHEDULER_BIN:-/home/work/StepMesh/build/tests/utests/ut_scheduler}
+export SERVER_BIN=${SERVER_BIN:-/home/work/StepMesh/build/tests/utests/ut_server}
+export WORKER_BIN=${WORKER_BIN:-/home/work/StepMesh/build/tests/utests/ut_tensor_worker}
 
-export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=/opt/rocm/lib:$LD_LIBRARY_PATH
 
 cmd=$1
 echo $cmd
@@ -19,7 +19,7 @@ trap cleanup EXIT
 
 export DMLC_NUM_WORKER=${DMLC_NUM_WORKER:-1}
 export DMLC_NUM_SERVER=1
-export DMLC_INTERFACE=brainpf_bond0        # my RDMA interface
+export DMLC_INTERFACE=ens41np0        # my RDMA interface
 export DMLC_PS_ROOT_URI=$(ip -o -4 addr | grep ${DMLC_INTERFACE} | awk '{print $4}' | cut -d'/' -f1)
 export DMLC_PS_ROOT_PORT=${DMLC_PS_ROOT_PORT:-12278} # scheduler's port (can random choose)
 export STEPMESH_SPLIT_QP_LAG=1

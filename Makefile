@@ -27,6 +27,11 @@ CMAKE_CUDA_COMPILER=$(CUDA_HOME)/bin/nvcc
 CUDA_TOOLKIT_ROOT_DIR=$(CUDA_HOME)
 endif
 
+ifdef ROCM_HOME
+CMAKE_CUDA_COMPILER=$(ROCM_HOME)/bin/hipcc
+CUDA_TOOLKIT_ROOT_DIR=$(ROCM_HOME)
+endif
+
 INCPATH = -I./src -I./include -I$(DEPS_PATH)/include
 CFLAGS = -std=c++14 -msse2 -fPIC -O3 -ggdb -Wall -finline-functions $(INCPATH) $(ADD_CFLAGS)
 LIBS = -pthread -lrt
@@ -35,6 +40,12 @@ ifeq ($(USE_CUDA), 1)
 LIBS += -lcudart -L$(CUDA_HOME)/lib64
 CFLAGS += -DDMLC_USE_CUDA
 INCPATH += -I$(CUDA_HOME)/include
+endif
+
+ifeq ($(USE_ROCM), 1)
+LIBS += -lamdhip64 -lhsa-runtime64 -L$(ROCM_HOME)/lib
+CFLAGS += -DDMLC_USE_ROCM
+INCPATH += -I$(ROCM_HOME)/include
 endif
 
 ifeq ($(USE_RDMA), 1)
@@ -104,6 +115,6 @@ test: $(TEST)
 
 af:
 	@mkdir -p cmake_build
-	@cd cmake_build; cmake .. -DCMAKE_CUDA_COMPILER=$(CMAKE_CUDA_COMPILER) -DPython_EXECUTABLE=$(shell which python3) -DCUDA_TOOLKIT_ROOT_DIR=$(CUDA_TOOLKIT_ROOT_DIR); make -j
+	@cd cmake_build; cmake .. -DCMAKE_CUDA_COMPILER=$(CMAKE_CUDA_COMPILER) -DPython_EXECUTABLE=$(shell which python3) -DCUDA_TOOLKIT_ROOT_DIR=$(CUDA_TOOLKIT_ROOT_DIR) -DCUDA_INCLUDE_DIRS=$(CUDA_INCLUDE_DIRS); make -j
 	@mkdir -p build
 

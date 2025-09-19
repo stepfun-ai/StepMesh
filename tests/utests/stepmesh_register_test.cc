@@ -123,7 +123,7 @@ void StartRegisterServer() {
 }
 
 void StartWorkers() {
-#ifdef DMLC_USE_CUDA
+#if defined(DMLC_USE_CUDA) || defined(DMLC_USE_ROCM) 
   PS_LOG(INFO) << "run worker: gpu=" << g_conf.gpu
                << ", node rank=" << g_conf.node_rank
                << ", group size=" << g_conf.group_size;

@@ -3,7 +3,7 @@
 #include "./util.h"
 #include "./public.hpp"
 #include <future>
-#ifdef DMLC_USE_CUDA
+#if defined(DMLC_USE_CUDA) || defined(DMLC_USE_ROCM)
   #include <ATen/cuda/CUDAEvent.h>
   #include <ATen/cuda/CUDAContext.h>
 #endif
@@ -12,7 +12,7 @@
 #define PRIVATE_OPS_
 
 using namespace ps;
-#ifdef DMLC_USE_CUDA
+#if defined(DMLC_USE_CUDA) || defined(DMLC_USE_ROCM)
 class SimpleNotify{
 private:
     int notify_cnt = 1;

@@ -84,7 +84,17 @@ USE_CUDA=0 pip3 install -v -e .
 
 ```
 
+Build with ROCm
 
+```bash
+
+# Build AF library
+ROCM_HOME=/opt/rocm USE_ROCM=1 make af
+
+# Build and install Fserver （AF's Python SDK）
+ROCM_HOME=/opt/rocm USE_ROCM=1 pip3 install  -e .
+
+```
 ## Concepts
 
 In StepMesh, there are three roles: worker, server and scheduler. Each role is an independent process.

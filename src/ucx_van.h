@@ -29,6 +29,11 @@
 #include <cuda_runtime.h>
 #endif
 
+#if DMLC_USE_ROCM
+#include <hip/hip_runtime.h>
+#include <hip/hip_runtime_api.h>
+#endif
+
 namespace ps {
 
 ErrorCode GetErrorCode(ucs_status_t status) {
@@ -710,11 +715,19 @@ public:
 
 private:
   void SetGpuDeviceId() {
-#if DMLC_USE_CUDA
+#if defined(DMLC_USE_CUDA)
     if (src_dev_type_ == GPU) {
       cudaError_t cerr = cudaSetDevice(src_dev_idx_);
 
       if (cudaSuccess != cerr) {
+        PS_PS_LOG(ERROR) << "failed to set device " << src_dev_idx_ << ": " << cerr;
+      }
+    }
+#elif defined(DMLC_USE_ROCM)
+    if (src_dev_type_ == GPU) {
+      hipError_t cerr = hipSetDevice(src_dev_idx_);
+
+      if (hipSuccess != cerr) {
         PS_PS_LOG(ERROR) << "failed to set device " << src_dev_idx_ << ": " << cerr;
       }
     }
@@ -1237,12 +1250,20 @@ class UCXVan : public Van {
 
   void PinMemory(void *addr, size_t length, bool is_gpu, int numa_or_gpu_index) override {
     int dev_id = 0;
-#if DMLC_USE_CUDA
+#ifdef DMLC_USE_CUDA
     if (is_gpu) {
       auto err = cudaGetDevice(&dev_id);
       PS_CHECK(err == cudaSuccess) << "cudaGetDevice failed: " << err;
     }
 #endif
+
+#ifdef DMLC_USE_ROCM
+    if (is_gpu) {
+      auto err = hipGetDevice(&dev_id);
+      PS_CHECK(err == hipSuccess) << "hipGetDevice failed: " << err;
+    }
+#endif
+
     auto ctx = ContextById(dev_id);
     PS_CHECK(ctx) << "invalid device id " << dev_id;
     ctx->PinMemory(addr, length, is_gpu);

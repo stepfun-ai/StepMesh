@@ -601,7 +601,7 @@ void KVServer<Val>::Response(const KVMeta& req, const KVPairs<Val>& res,
   msg.meta.addr = req.addr;
   msg.meta.val_len = req.val_len;
   msg.meta.option = req.option;
-#ifdef DMLC_USE_CUDA
+#if defined(DMLC_USE_CUDA) || defined(DMLC_USE_ROCM)
   if (event != nullptr) {
     msg.meta.tensor_ev = event;
   }

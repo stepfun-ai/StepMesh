@@ -139,7 +139,7 @@ inline void StartPS(int customer_id, Node::Role role, int rank, bool do_barrier,
                     const char *argv0 = nullptr) {
   Backend::Register("CPU", new CpuBackend());
 
-#ifdef DMLC_USE_CUDA
+#if defined(DMLC_USE_CUDA) || defined(DMLC_USE_ROCM)
   Backend::Register("GPU", new GpuBackend());
 #endif
 

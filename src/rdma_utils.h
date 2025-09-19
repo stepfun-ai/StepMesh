@@ -36,7 +36,10 @@
 #ifdef DMLC_USE_CUDA
 #include <cuda_runtime.h>
 #endif
-
+#ifdef DMLC_USE_ROCM
+#include <hip/hip_runtime.h>
+#include <hip/hip_runtime_api.h>
+#endif
 #include <algorithm>
 #include <map>
 #include <memory>
