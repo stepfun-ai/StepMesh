@@ -133,7 +133,8 @@ class AFTensorWorker {
     req.event = GetEvent();
     req.event->Record();
 
-    PS_VLOG(3) << "ts" << start_ts << " pushpull_queue_ push "  << pushpull_queue_.Size();
+    PS_VLOG(3) << "ts" << start_ts << " pushpull_queue_ push "
+               << pushpull_queue_.Size();
     pushpull_queue_.Push(std::move(req));
 
     // std::unique_lock<std::mutex> timestamp_lock(timestamp_mu_);
@@ -217,7 +218,8 @@ class AFTensorWorker {
       }
       ZBatchPushPull_(req.push, req.push_timestamps, req.pull,
                       req.pull_timestamps);
-      PS_VLOG(4) << "pushpull_queue_ Loop done " << req.push_timestamps[0] << " " << req.pull_timestamps[0];
+      PS_VLOG(4) << "pushpull_queue_ Loop done " << req.push_timestamps[0]
+                 << " " << req.pull_timestamps[0];
     }
     PS_LOG(INFO) << "Stop PushPullWorker" << gpu_;
   }
@@ -235,7 +237,8 @@ class AFTensorWorker {
     msg.meta.timestamp = ts;
     msg.meta.addr = reinterpret_cast<uint64_t>(tensor.data_ptr());
     msg.meta.val_len = tensor.numel() * tensor.itemsize();
-    PS_VLOG(2) << "ZPush_ addr: 0x" << std::hex << msg.meta.addr << std::dec << " val_len: " << msg.meta.val_len;
+    PS_VLOG(2) << "ZPush_ addr: 0x" << std::hex << msg.meta.addr << std::dec
+               << " val_len: " << msg.meta.val_len;
     msg.meta.key = keys[0];
     msg.meta.is_tensor = 1;
     msg.meta.dtype = static_cast<int>(tensor.scalar_type());

@@ -705,7 +705,7 @@ int Van::Send(Message &msg) {
 }
 
 void Van::Receiving() {
-  if(!is_scheduler_) {
+  if (!is_scheduler_) {
     BindCpuCore(2, 1);
   }
   Meta nodes;

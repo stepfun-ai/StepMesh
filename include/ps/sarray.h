@@ -49,8 +49,7 @@ class SArray {
   SArray() {}
 
   /** \brief empty deconstrcutor */
-  ~SArray() {
-  }
+  ~SArray() {}
 
   /**
    * \brief Create an array with length n with initialized value
@@ -216,7 +215,8 @@ class SArray {
   template <typename Deleter>
   void reset(V* data, size_t size, Deleter del,
              DeviceType src_device_type = CPU, int src_device_id = 0,
-             DeviceType dst_device_type = CPU, int dst_device_id = 0 , bool force = false) {
+             DeviceType dst_device_type = CPU, int dst_device_id = 0,
+             bool force = false) {
     size_ = size;
     capacity_ = size;
 
@@ -229,16 +229,15 @@ class SArray {
 
   /**
    * @brief force reset the data pointer
-   * 
-   * @param data 
-   * @param size 
-   * @param src_device_type 
-   * @param src_device_id 
-   * @param dst_device_type 
-   * @param dst_device_id 
+   *
+   * @param data
+   * @param size
+   * @param src_device_type
+   * @param src_device_id
+   * @param dst_device_type
+   * @param dst_device_id
    */
   void force_reset(SArray<V>& arr) {
-
     this->ptr_ = arr.ptr_;
     this->size_ = arr.size_;
     this->capacity_ = arr.capacity_;

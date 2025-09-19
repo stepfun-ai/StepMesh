@@ -329,7 +329,7 @@ class RDMAVan : public Van {
     PS_CHECK(meta_len);
 
     RegisterMemory(msg);
-    PS_VLOG(4) << "2.0 Reg Done " ;
+    PS_VLOG(4) << "2.0 Reg Done ";
     // pack meta info
     if (IsValidPushpull(msg)) {
       AddMeta(msg);
@@ -365,7 +365,7 @@ class RDMAVan : public Van {
     PS_CHECK_EQ(msg_buf->inline_len, (size_t)meta_len);
     PS_CHECK(msg_buf->inline_buf);
     PS_VLOG(4) << "2.1 inline_buf done";
-    for(size_t i = 0; i < msg.data.size(); i++) {
+    for (size_t i = 0; i < msg.data.size(); i++) {
       msg_buf->data[i] = msg.data[i];
     }
     PS_VLOG(4) << "2.2 copy done";
@@ -679,7 +679,8 @@ class RDMAVan : public Van {
     for (auto &sa : msg.data) {
       if (sa.size() == 0) continue;
       std::lock_guard<std::mutex> lock(map_mu_);
-      if ((mem_mr_.find(sa.data()) == mem_mr_.end() || mem_mr_[sa.data()]->length < sa.size()) &&
+      if ((mem_mr_.find(sa.data()) == mem_mr_.end() ||
+           mem_mr_[sa.data()]->length < sa.size()) &&
           (sa_cnt == 1)) {  // only vals register memory
         struct ibv_mr *temp_mr;
         temp_mr = ibv_reg_mr(mem_allocator_->GetPD(), sa.data(), sa.size(),
@@ -699,7 +700,8 @@ class RDMAVan : public Van {
       PS_CHECK_GT(msg.meta.val_len, 0) << msg.meta.val_len;
       auto addr = reinterpret_cast<char *>(msg.meta.addr);
       std::lock_guard<std::mutex> lock(map_mu_);
-      if (mem_mr_.find(addr) == mem_mr_.end() || mem_mr_[addr]->length < msg.meta.val_len) {
+      if (mem_mr_.find(addr) == mem_mr_.end() ||
+          mem_mr_[addr]->length < msg.meta.val_len) {
         struct ibv_mr *temp_mr;
         temp_mr = ibv_reg_mr(mem_allocator_->GetPD(), addr, msg.meta.val_len,
                              IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
@@ -776,7 +778,7 @@ class RDMAVan : public Van {
   void PollCQ() {
     // Pre-allocated work completions array used for polling
     struct ibv_wc wc[kMaxConcurrentWorkRequest];
-    if(!postoffice_->is_scheduler()) {
+    if (!postoffice_->is_scheduler()) {
       BindCpuCore(1, 1);
     }
 

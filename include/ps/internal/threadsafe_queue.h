@@ -9,10 +9,11 @@
 #include <mutex>
 #include <queue>
 #include <utility>
+
+#include "dmlc/logging.h"
 #include "ps/base.h"
 #include "ps/internal/env.h"
 #include "ps/internal/spsc_queue.h"
-#include "dmlc/logging.h"
 
 namespace ps {
 
@@ -34,7 +35,7 @@ class ThreadsafeQueue {
    * \brief push an value into the end. threadsafe.
    * \param new_value the value
    */
-  inline void Push(T new_value, bool print_log=false) {
+  inline void Push(T new_value, bool print_log = false) {
     if (lockless_) {
       // PushLockless(std::move(new_value));
       PushAtomic(std::move(new_value), print_log);

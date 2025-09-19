@@ -208,7 +208,9 @@ class KVWorker : public SimpleApp {
    *
    * \param timestamp the timestamp returned by the push or pull
    */
-  void Wait(int timestamp, uint64_t timeout_ms = 10000) { obj_->WaitRequest(timestamp, timeout_ms); }
+  void Wait(int timestamp, uint64_t timeout_ms = 10000) {
+    obj_->WaitRequest(timestamp, timeout_ms);
+  }
 
   /**
    * \brief zero-copy Push

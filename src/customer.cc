@@ -60,8 +60,10 @@ void Customer::WaitRequest(int timestamp, uint64_t timeout_ms) {
     } else {
       uint64_t now = GetNanosecond(false);
       // 1s for timeout
-      if(now - req->start_time > timeout_ns) {
-        PS_LOG(FATAL) << "request timeout " << timeout_ms << "ms, handler " << timestamp << " " << (now - req->start_time)/1000 << "us";
+      if (now - req->start_time > timeout_ns) {
+        PS_LOG(FATAL) << "request timeout " << timeout_ms << "ms, handler "
+                      << timestamp << " " << (now - req->start_time) / 1000
+                      << "us";
       }
       // _mm_pause();
     }
@@ -116,7 +118,8 @@ void Customer::DirectProcess(Message& recv) {
     t->request = recv.meta.request_trace;
     t->response = recv.meta.response_trace;
 #endif  // STEPMESH_ENABLE_TRACE
-    PS_VLOG(4) << "recv response " << recv.meta.timestamp << " " << recv.meta.DebugString();
+    PS_VLOG(4) << "recv response " << recv.meta.timestamp << " "
+               << recv.meta.DebugString();
     t->response_count.fetch_add(1, std::memory_order_release);
   }
 }

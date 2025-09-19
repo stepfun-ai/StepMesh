@@ -476,10 +476,11 @@ class RDMATransport : public Transport {
       resp->origin_addr = req->origin_addr;
       resp->idx = addrpool.StoreAddress(buf_ctx);
 
-      PS_VLOG(2) << "GDR Server Reply: meta_addr=" << std::hex << resp->meta_addr
-                 << ", meta_rkey=" << std::hex << resp->meta_rkey
-                 << ", data_addr=" << std::hex << resp->data_addr
-                 << ", data_rkey=" << std::hex << resp->data_rkey;
+      PS_VLOG(2) << "GDR Server Reply: meta_addr=" << std::hex
+                 << resp->meta_addr << ", meta_rkey=" << std::hex
+                 << resp->meta_rkey << ", data_addr=" << std::hex
+                 << resp->data_addr << ", data_rkey=" << std::hex
+                 << resp->data_rkey;
 
       // Send the reply
       struct ibv_sge sge;
@@ -664,7 +665,9 @@ class RDMATransport : public Transport {
     auto data_raddr = msg.meta.addr;
     auto data_rkey = msg.meta.option;
     auto data_len = msg.meta.val_len;
-    PS_CHECK_EQ((size_t)msg.meta.val_len, msg_buf->data[1].size()) << "val len" << (size_t)msg.meta.val_len << " data len " << msg_buf->data[1].size();
+    PS_CHECK_EQ((size_t)msg.meta.val_len, msg_buf->data[1].size())
+        << "val len" << (size_t)msg.meta.val_len << " data len "
+        << msg_buf->data[1].size();
 
     struct ibv_sge data_sge;
     data_sge.addr = reinterpret_cast<uint64_t>(msg_buf->data[1].data());
@@ -924,7 +927,8 @@ class IPCTransport : public RDMATransport {
 
   void SendPullResponse(Message &msg, MessageBuffer *msg_buf,
                         RemoteTuple remote_tuple, size_t lkey) {
-    auto addr = reinterpret_cast<void *>(PS_CHECK_NOTNULL(msg_buf->data[1].data()));
+    auto addr =
+        reinterpret_cast<void *>(PS_CHECK_NOTNULL(msg_buf->data[1].data()));
     void *shm_addr =
         PS_CHECK_NOTNULL(GetSharedMemory(shm_prefix_, msg.meta.key));
 

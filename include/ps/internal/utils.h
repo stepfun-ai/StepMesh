@@ -6,6 +6,7 @@
 #define PS_INTERNAL_UTILS_H_
 
 #include <ctype.h>
+#include <execinfo.h>
 #include <pthread.h>
 #include <sched.h>
 #include <stdio.h>
@@ -19,7 +20,6 @@
 
 #include "dmlc/logging.h"
 #include "ps/internal/env.h"
-#include <execinfo.h>
 
 namespace ps {
 
@@ -125,13 +125,12 @@ static inline uint64_t GetNanosecond(bool return_zero = true) {
 
 static int PS_VERBOSE = ps::GetEnv("PS_VERBOSE", 0);
 
-
 /**
  * @brief Rename Thread
- * 
+ *
  */
 
-static inline void RenameThread(const std::string& name) {
+static inline void RenameThread(const std::string &name) {
   pthread_setname_np(pthread_self(), name.c_str());
 }
 
@@ -141,7 +140,6 @@ static inline void RenameThread(const std::string& name) {
  * \param core_count is the number of cores the thread need.
  */
 static inline void BindCpuCore(int offset, int core_count = 1) {
-
   RenameThread("StepMesh: BindCpuCore");
   int gpu = -1;
   Environment::Get()->find("STEPMESH_GPU", &gpu, gpu);

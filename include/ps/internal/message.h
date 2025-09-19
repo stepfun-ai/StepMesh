@@ -384,7 +384,7 @@ struct Message {
       meta.dst_dev_id = val.dst_device_id_;
     }
   }
-  
+
   std::string DebugString() const {
     std::stringstream ss;
     ss << meta.DebugString();
