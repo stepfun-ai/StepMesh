@@ -32,6 +32,7 @@ struct CustomerTracker {
   std::atomic<int> response_count;
   struct Trace request;
   struct Trace response;
+  uint64_t start_time;
 };
 
 class Customer {
@@ -80,7 +81,7 @@ class Customer {
    * \brief wait until the request is finished. threadsafe
    * \param timestamp the timestamp of the request
    */
-  void WaitRequest(int timestamp);
+  void WaitRequest(int timestamp, uint64_t timeout_ms = 10000);
 
   /**
    * \brief return the number of responses received for the request. threadsafe

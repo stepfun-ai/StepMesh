@@ -5,8 +5,23 @@ from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 import subprocess
 import pathlib
 import os
+import re
+import sys
 from pathlib import Path
 
+def get_version():
+    version = '0.0.4.post1'
+    # with open('stepkv/version.py', 'r') as fd:
+    #     version = re.search(r'^__version__\s*=\s*[\'"]([^\'"]*)[\'"]',
+    #                         fd.read(), re.MULTILINE).group(1)
+    if len(sys.argv) >= 2:
+        if sys.argv[1] == 'bdist_wheel':
+            import torch
+            torch_version = torch.__version__.replace("+", "")
+            version = f"{version}+torch{torch_version}"
+    assert version, 'Cannot find version information'
+    print(version)
+    return version
 
 def _get_cuda_bare_metal_version(cuda_dir):
     assert cuda_dir is not None, "Please ensure cuda is installed"
@@ -39,6 +54,7 @@ if __name__ == "__main__":
                 '-DSTEPMESH_USE_GDR',
                 '-DDMLC_USE_RDMA', 
                 '-DSTEPMESH_USE_TORCH',
+                '-DSTEPMESH_ENABLE_TRACE',
                 '-fvisibility=hidden',
                 ],
                 'nvcc': [],
@@ -60,7 +76,7 @@ if __name__ == "__main__":
         name='FServer',
         description='A Remote FFN Server Implementation for AF Disaggregation',
         author='StepFun',
-        version='0.0.1.dev',
+        version=get_version(),
         packages=['fserver'],
         url='',
         ext_modules=[

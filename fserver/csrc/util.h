@@ -19,6 +19,8 @@
 #include "ps/ps.h"
 
 #ifndef UTIL_H_
+typedef std::tuple<uint64_t, std::vector<torch::Tensor>, std::vector<uint64_t>>
+    ServerDataBatch;
 #define  UTIL_H_
 typedef std::tuple<uint64_t, std::vector<torch::Tensor>, std::vector<uint64_t>>
     ServerDataBatch;

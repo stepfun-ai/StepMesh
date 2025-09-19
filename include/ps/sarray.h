@@ -49,7 +49,8 @@ class SArray {
   SArray() {}
 
   /** \brief empty deconstrcutor */
-  ~SArray() {}
+  ~SArray() {
+  }
 
   /**
    * \brief Create an array with length n with initialized value
@@ -85,7 +86,7 @@ class SArray {
     PS_CHECK_EQ(size_ * sizeof(V), arr.size() * sizeof(W))
         << "cannot be divided";
     capacity_ = arr.capacity() * sizeof(W) / sizeof(V);
-    ptr_ = std::shared_ptr<V>(arr.ptr(), reinterpret_cast<V*>(arr.data()));
+    ptr_ = reinterpret_cast<V*>(arr.ptr_);
     // copy device info
     src_device_type_ = arr.src_device_type_;
     src_device_id_ = arr.src_device_id_;
@@ -215,14 +216,36 @@ class SArray {
   template <typename Deleter>
   void reset(V* data, size_t size, Deleter del,
              DeviceType src_device_type = CPU, int src_device_id = 0,
-             DeviceType dst_device_type = CPU, int dst_device_id = 0) {
+             DeviceType dst_device_type = CPU, int dst_device_id = 0 , bool force = false) {
     size_ = size;
     capacity_ = size;
-    ptr_.reset(data, del);
+
+    ptr_ = data;
     src_device_type_ = src_device_type;
     src_device_id_ = src_device_id;
     dst_device_type_ = dst_device_type;
     dst_device_id_ = dst_device_id;
+  }
+
+  /**
+   * @brief force reset the data pointer
+   * 
+   * @param data 
+   * @param size 
+   * @param src_device_type 
+   * @param src_device_id 
+   * @param dst_device_type 
+   * @param dst_device_id 
+   */
+  void force_reset(SArray<V>& arr) {
+
+    this->ptr_ = arr.ptr_;
+    this->size_ = arr.size_;
+    this->capacity_ = arr.capacity_;
+    this->src_device_type_ = arr.src_device_type_;
+    this->src_device_id_ = arr.src_device_id_;
+    this->dst_device_type_ = arr.dst_device_type_;
+    this->dst_device_id_ = arr.dst_device_id_;
   }
 
   /**
@@ -278,12 +301,12 @@ class SArray {
   inline V* end() { return data() + size(); }
   inline const V* end() const { return data() + size(); }
 
-  inline V* data() const { return ptr_.get(); }
+  inline V* data() const { return ptr_; }
 
   /** \brief get the shared pointer */
-  inline std::shared_ptr<V>& ptr() { return ptr_; }
+  // inline std::shared_ptr<V>& ptr() { return ptr_; }
   /** \brief get the const shared pointer */
-  inline const std::shared_ptr<V>& ptr() const { return ptr_; }
+  // inline const std::shared_ptr<V>& ptr() const { return ptr_; }
 
   inline V back() const {
     PS_CHECK(!empty());
@@ -323,7 +346,7 @@ class SArray {
     PS_CHECK_GE(end, begin);
     PS_CHECK_LE(end, size());
     SArray<V> ret;
-    ret.ptr_ = std::shared_ptr<V>(ptr_, data() + begin);
+    ret.ptr_ = ptr_ + begin;
     ret.size_ = end - begin;
     ret.capacity_ = end - begin;
     ret.src_device_type_ = src_device_type_;
@@ -344,9 +367,9 @@ class SArray {
  private:
   size_t size_ = 0;
   size_t capacity_ = 0;
-  std::shared_ptr<V> ptr_;
 
  public:
+  V* ptr_;
   DeviceType src_device_type_ = CPU;
   int src_device_id_ = 0;
   DeviceType dst_device_type_ = CPU;

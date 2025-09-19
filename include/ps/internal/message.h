@@ -293,7 +293,7 @@ struct Meta {
       ss << " }";
     }
     if (!control.empty() || simple_app) ss << ". NOT DATA MSG!";
-    ss << "Slave QP Count: " << slave_qp_num;
+    ss << ", Slave QP Count: " << slave_qp_num;
     return ss.str();
   }
   /** \brief an int head */
@@ -384,6 +384,7 @@ struct Message {
       meta.dst_dev_id = val.dst_device_id_;
     }
   }
+  
   std::string DebugString() const {
     std::stringstream ss;
     ss << meta.DebugString();

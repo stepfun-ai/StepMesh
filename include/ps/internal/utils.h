@@ -19,6 +19,7 @@
 
 #include "dmlc/logging.h"
 #include "ps/internal/env.h"
+#include <execinfo.h>
 
 namespace ps {
 
@@ -109,18 +110,30 @@ static uint64_t norm = CycleToNs();
 /*!
  * \brief Get the current nanocount.
  */
-static inline uint64_t GetNanosecond() {
+static inline uint64_t GetNanosecond(bool return_zero = true) {
 #ifdef STEPMESH_ENABLE_TRACE
+  return_zero = false;
+#endif
+  if (return_zero) {
+    return 0;
+  }
   if (norm == 0) {
     norm = CycleToNs();
   }
   return static_cast<uint64_t>((_GetCurrentCycle() << 5) / norm);
-#else
-  return 0;
-#endif
 }
 
 static int PS_VERBOSE = ps::GetEnv("PS_VERBOSE", 0);
+
+
+/**
+ * @brief Rename Thread
+ * 
+ */
+
+static inline void RenameThread(const std::string& name) {
+  pthread_setname_np(pthread_self(), name.c_str());
+}
 
 /**
  * \brief Bind current thread to a specific CPU core.
@@ -128,6 +141,8 @@ static int PS_VERBOSE = ps::GetEnv("PS_VERBOSE", 0);
  * \param core_count is the number of cores the thread need.
  */
 static inline void BindCpuCore(int offset, int core_count = 1) {
+
+  RenameThread("StepMesh: BindCpuCore");
   int gpu = -1;
   Environment::Get()->find("STEPMESH_GPU", &gpu, gpu);
   int bind_enable = 0;

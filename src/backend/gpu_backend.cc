@@ -61,6 +61,7 @@ void* GpuBackend::Alloc(uint64_t size) {
 
 void GpuBackend::Free(void* m) {
   PS_CHECK_NE(m, nullptr) << "backend cannot free null memory";
+  PS_VLOG(3) << "free gpu memory " << m;
   cudaError_t err = cudaFree(m);
   PS_CHECK_EQ(err, cudaSuccess)
       << "cudaFree failed for ptr " << reinterpret_cast<void*>(m) << " ("

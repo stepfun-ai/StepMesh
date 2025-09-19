@@ -100,7 +100,7 @@ void respond(std::vector<torch::Tensor>& tensors,
   PS_CHECK_EQ(tensors.size(), reqmeta.pull_tensors.size());
   std::vector<KeyTensor> result;
   for (size_t i = 0; i < tensors.size(); ++i) {
-    result.push_back({reqmeta.pull_tensors[i].key, std::move(tensors[i])});
+    result.push_back({reqmeta.pull_tensors[i].key, std::move(tensors[i].detach())});
   }
   fserver_->Response(reqmeta, result, need_event);
 }
@@ -130,19 +130,19 @@ int push_pull(std::vector<torch::Tensor>& push_tensors,
   auto pull_batch = KeyTensorBatch(pull_tensors.size());
   for (size_t i = 0; i < push_tensors.size(); i++) {
     push_batch[i] = KeyTensor{
-        static_cast<uint64_t>(push_keys[i]), std::move(push_tensors[i])
+        static_cast<uint64_t>(push_keys[i]), std::move(push_tensors[i].detach())
     };
   }
   for (size_t i = 0; i < pull_tensors.size(); i++) {
     pull_batch[i] = KeyTensor{
-        static_cast<uint64_t>(pull_keys[i]), std::move(pull_tensors[i])
+        static_cast<uint64_t>(pull_keys[i]), std::move(pull_tensors[i].detach())
     };
   }
   return fworker_->ZBatchPushPull(push_batch, pull_batch);
 }
 
-void wait(int handler) {
-  fworker_->Wait(handler);
+void wait(int handler, uint64_t timeout_ms = 1000) {
+  fworker_->Wait(handler, timeout_ms);
 }
 
 void barrier(bool include_server, bool include_worker, bool instrance_barrier=true) {
@@ -163,26 +163,29 @@ void barrier(bool include_server, bool include_worker, bool instrance_barrier=tr
   }
 }
 
+
 void init() {
+
   std::string role_str = ps::GetEnv("DMLC_ROLE", "server");
+  int offset = 0;
   role_ = ps::GetRole(role_str);
 
   ps::Environment::Get()->find("STEPMESH_GPU", &gpu_, gpu_);
   ps::Environment::Get()->find("DMLC_GROUP_SIZE", &group_size_, group_size_);
   ps::Environment::Get()->find("DMLC_NODE_RANK", &node_rank_, node_rank_);
-  ps::Environment::Get()->find("DMLC_INSTANCE_ID", &instance_id_, gpu_);
+  ps::Environment::Get()->find("DMLC_RANK_OFFSET", &offset, offset);
+  ps::Environment::Get()->find("DMLC_INSTANCE_ID", &instance_id_, gpu_ + offset);
   ps::Environment::Get()->find("DMLC_NUM_WORKER", &num_worker_, num_worker_);
-
+  
   worker_mask_ = (1 << num_worker_) - 1;
   q_.resize(num_worker_);
   q_signal_.store(0);;
-
-  ps::StartPS(0, role_,  group_size_ * node_rank_ + gpu_, true);
+  ps::StartPS(0, role_,  group_size_ * node_rank_ + gpu_ + offset, true);
   if (role_ == Node::WORKER) {
-    fworker_ = new AFTensorWorker(instance_id_);
+    fworker_ = new AFTensorWorker(instance_id_ );
     barrier(true, true);
   } else if (role_ == Node::SERVER) {
-    fserver_ = new AFTensorServer(instance_id_);
+    fserver_ = new AFTensorServer(instance_id_ );
     fserver_->SetRequestHandle(RequestHandler);
     ps::RegisterExitCallback([]() { delete fserver_; });
     barrier(true, true);
@@ -242,8 +245,16 @@ void pybind_public(py::module &m){
         py::call_guard<py::gil_scoped_release>());
 
   // APIs for Attention Instances
-  m.def("push_pull", &push_pull, py::call_guard<py::none>());
-  m.def("wait", &wait, py::call_guard<py::none>());
+  m.def("push_pull", &push_pull, 
+    py::arg("push_tensors"),
+    py::arg("push_keys"),
+    py::arg("pull_tensors"),
+    py::arg("pull_keys"),
+    py::call_guard<py::none>());
+  m.def("wait", &wait, 
+    py::arg("handler"),
+    py::arg("timeout_ms") = 10000,
+    py::call_guard<py::none>());
 
   // APIs for FFN Instances
   m.def("get_batch", &get_batch, py::call_guard<py::none>());

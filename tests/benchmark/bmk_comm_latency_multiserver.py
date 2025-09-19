@@ -58,7 +58,7 @@ gpu = os.environ.get('STEPMESH_GPU', '0')
 local_rank_num = int(os.environ.get('DMLC_GROUP_SIZE', '1'))
 node_rank = int(os.environ.get('DMLC_NODE_RANK', '0'))
 rank = node_rank * local_rank_num + int(gpu)
-bsz, num_token, dim = 1, 64, 7168
+bsz, num_token, dim = 1, 1024, 7168
 num_iters = 100000000
 
 setup_seed(42)
