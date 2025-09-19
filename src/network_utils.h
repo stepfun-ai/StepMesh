@@ -339,12 +339,14 @@ static inline int GetAvailablePort(int num_ports, std::array<int, 32>* ports) {
  * \return 0 on failure or no cuda, 1 when getting the interface successfully
  */
 static inline int GetInterfaceAndIPByCurrentGpu(std::string* interface,
-                                                std::string* ip) {
+                                                std::string* ip, int* gpu) {
   interface->clear();
   ip->clear();
 
+
 #if defined(DMLC_USE_CUDA) || defined(DMLC_USE_ROCM)
   int gpu = -1;
+  
   #ifdef DMLC_USE_CUDA
   cudaGetDevice(&gpu);
   if (gpu == -1) return 0;
@@ -353,7 +355,9 @@ static inline int GetInterfaceAndIPByCurrentGpu(std::string* interface,
   hipGetDevice(&gpu);
   if (gpu == -1) return 0;
   #endif
+  
   char pciPath[512];
+  
   #ifdef DMLC_USE_CUDA
   cudaDeviceProp deviceProp = {};
   cudaGetDeviceProperties(&deviceProp, gpu);
@@ -362,9 +366,11 @@ static inline int GetInterfaceAndIPByCurrentGpu(std::string* interface,
   hipDeviceProp_t deviceProp = {};
   hipGetDeviceProperties(&deviceProp, gpu);
   #endif
+  
   snprintf(pciPath, sizeof(pciPath),
            "/sys/class/pci_bus/0000:%02x/device/0000:%02x:%02x.0/device",
            deviceProp.pciBusID, deviceProp.pciBusID, deviceProp.pciDeviceID);
+
   char* path = realpath(pciPath, nullptr);
 
   if (path == nullptr) return 0;

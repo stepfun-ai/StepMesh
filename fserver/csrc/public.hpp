@@ -178,7 +178,6 @@ void init() {
   q_signal_.store(0);;
 
   ps::StartPS(0, role_,  group_size_ * node_rank_ + gpu_, true);
-  Backend::Get()->SetDevice(gpu_);
   if (role_ == Node::WORKER) {
     fworker_ = new AFTensorWorker(instance_id_);
     barrier(true, true);

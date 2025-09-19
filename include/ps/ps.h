@@ -143,6 +143,13 @@ inline void StartPS(int customer_id, Node::Role role, int rank, bool do_barrier,
   Backend::Register("GPU", new GpuBackend());
 #endif
 
+  // scheduler do not need to attach to gpu
+  if (role != Node::SCHEDULER) {
+    int gpu = 0;
+    Environment::Get()->find("STEPMESH_GPU", &gpu, gpu);
+    Backend::Get()->SetDevice(gpu);
+  }
+
   int group_size = 1;
 
   Environment::Get()->find("DMLC_GROUP_SIZE", &group_size, group_size);
