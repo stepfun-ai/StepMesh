@@ -57,17 +57,9 @@ connector.init_afd_connector()
 # set_numa_affinity(local_rank)
 import fserver_lib as ps
 ret_buffer = torch.rand([65535, 7168], dtype=torch.bfloat16, device='cuda')
-def execute():
-    # hidden_states, metadata = connector.recv_attn_output()
-    # ffn_output = torch.empty_like(hidden_states,device="cuda")
-    # connector.send_ffn_output(ffn_output, metadata)
-    batches = ps.get_batch()
-    if len(batches) != 0:
-        recv_tensor_list = [batches[i][1][0] for i in range(1)]
-        comm_id_list = [batches[i][0] for i in range(1)]
-        torch.cuda._sleep(int(cycle_per_ms * 0.26))
 
-        ps.respond_vec(ret_buffer, recv_tensor_list, comm_id_list)
+
+s = torch.cuda.Stream()
 
 if __name__ == "__main__":
     counter = 0
@@ -101,4 +93,13 @@ if __name__ == "__main__":
             print(f"Rank {rank}: Profiler completed at counter {counter}, recorded 100 warmup + 1000 active steps")
             profiler = None
         
-        execute()
+        with torch.cuda.stream(s):
+            batches = ps.get_batch()
+            if len(batches) != 0:
+                recv_tensor_list = [batches[i][1][0] for i in range(1)]
+                comm_id_list = [batches[i][0] for i in range(1)]
+                torch.cuda._sleep(int(cycle_per_ms * 0.20))
+
+                ps.respond_vec(ret_buffer, recv_tensor_list, comm_id_list)
+                # if counter % (1830*5) == 0:
+                #     connector.print_trace()

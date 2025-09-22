@@ -15,6 +15,7 @@
 
 #include "ps/internal/message.h"
 #include "ps/internal/threadsafe_queue.h"
+#include "ps/hash_table8.hpp"
 namespace ps {
 /**
  * \brief The object for communication.
@@ -29,10 +30,12 @@ class Postoffice;
 
 struct CustomerTracker {
   std::atomic<int> count;
-  std::atomic<int> response_count;
+  // std::atomic<int> response_count;
+  int response_count;
   struct Trace request;
   struct Trace response;
   uint64_t start_time;
+  bool done;
 };
 
 class Customer {

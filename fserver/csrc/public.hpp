@@ -142,7 +142,7 @@ int push_pull(std::vector<torch::Tensor>& push_tensors,
 }
 
 void wait(int handler, uint64_t timeout_ms = 1000) {
-  fworker_->Wait(handler, timeout_ms);
+    fworker_->Wait(handler, timeout_ms);
 }
 
 void barrier(bool include_server, bool include_worker, bool instrance_barrier=true) {
@@ -254,7 +254,7 @@ void pybind_public(py::module &m){
   m.def("wait", &wait, 
     py::arg("handler"),
     py::arg("timeout_ms") = 10000,
-    py::call_guard<py::none>());
+    py::call_guard<py::gil_scoped_release>());
 
   // APIs for FFN Instances
   m.def("get_batch", &get_batch, py::call_guard<py::none>());

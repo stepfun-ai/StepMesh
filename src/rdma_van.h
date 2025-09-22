@@ -774,7 +774,7 @@ class RDMAVan : public Van {
     // Pre-allocated work completions array used for polling
     struct ibv_wc wc[kMaxConcurrentWorkRequest];
     if (!postoffice_->is_scheduler()) {
-      BindCpuCore(1, 1);
+      BindCpuCore(3, 1);
     }
 
     while (!should_stop_.load()) {

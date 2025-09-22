@@ -15,7 +15,6 @@
 #include <iostream>
 #include <sstream>
 #include <tuple>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -23,6 +22,7 @@
 #include "ps/internal/backend.h"
 #include "ps/internal/utils.h"
 #include "ps/kv_app.h"
+#include "ps/hash_table8.hpp"
 
 namespace ps {
 
@@ -138,7 +138,7 @@ class AFTensorWorker {
     pushpull_queue_.Push(std::move(req));
 
     // std::unique_lock<std::mutex> timestamp_lock(timestamp_mu_);
-    batch_timestamps_[start_ts] = std::move(timestamps);
+    batch_timestamps_.emplace_unique(start_ts, std::move(timestamps));
     return start_ts;
   }
 
@@ -149,12 +149,12 @@ class AFTensorWorker {
   void Wait(int timestamp, uint64_t timeout_ms = 10000) {
     kv_.Wait(timestamp, timeout_ms);
     // std::unique_lock<std::mutex> lock(timestamp_mu_);
-    auto itr = batch_timestamps_.find(timestamp);
-    if (itr != batch_timestamps_.end()) {
-      for (auto ts : itr->second) {
+    auto v = batch_timestamps_.try_get(timestamp);
+    if (v) {
+      for (auto ts : *v) {
         kv_.Wait(ts, timeout_ms);
       }
-      batch_timestamps_.erase(itr);
+      batch_timestamps_.erase(timestamp);
     }
   }
 
@@ -166,12 +166,18 @@ class AFTensorWorker {
     std::vector<int> handlers;
     handlers.push_back(timestamp);
     std::unique_lock<std::mutex> lock(timestamp_mu_);
-    auto itr = batch_timestamps_.find(timestamp);
-    if (itr != batch_timestamps_.end()) {
-      for (auto ts : itr->second) {
+    auto v = batch_timestamps_.try_get(timestamp);
+    if (v) {
+      for (auto ts : *v) {
         handlers.push_back(ts);
       }
     }
+    // auto itr = batch_timestamps_.find(timestamp);
+    // if (itr != batch_timestamps_.end()) {
+    //   for (auto ts : itr->second) {
+    //     handlers.push_back(ts);
+    //   }
+    // }
     return handlers;
   }
 
@@ -201,7 +207,7 @@ class AFTensorWorker {
   }
 
   void PushPullWorker() {
-    BindCpuCore(3, 1);
+    BindCpuCore(4, 1);
     Backend::Get()->SetDevice(gpu_);
     while (true) {
       PS_VLOG(4) << "pushpull_queue_ Loop wait ";
@@ -360,7 +366,7 @@ class AFTensorWorker {
   /** \brief API mutex */
   mutable std::mutex mu_;
   /** \brief record timestamps for each batch */
-  std::unordered_map<int, std::vector<int>> batch_timestamps_;
+  emhash8::HashMap<int, std::vector<int>> batch_timestamps_;
   /** \brief mutex for record timestamps */
   std::mutex timestamp_mu_;
   /** \brief tensor events */
@@ -590,7 +596,7 @@ class AFTensorServer {
   }
 
   void ResponseWorker() {
-    BindCpuCore(3, 1);
+    BindCpuCore(1, 1);
     Backend::Get()->SetDevice(gpu_);
     PS_LOG(INFO) << "Start ResponseWorker " << gpu_;
     while (!response_stop_.load()) {

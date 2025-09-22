@@ -21,7 +21,7 @@ namespace ps {
 
 const int Node::kEmpty = std::numeric_limits<int16_t>::max();
 const int Meta::kEmpty = std::numeric_limits<int16_t>::max();
-const int kMaxSpinCount = 1000;
+const int kMaxSpinCount = 10000;
 
 Customer::Customer(int app_id, int customer_id,
                    const Customer::RecvHandle& recv_handle,
@@ -43,8 +43,9 @@ int Customer::NewRequest(int recver) {
   int num = postoffice_->GetNodeIDs(recver).size() / postoffice_->group_size();
   auto* t = new CustomerTracker();
   t->count.store(num);
-  t->response_count.store(0);
-  t->start_time = GetNanosecond(false);
+  t->response_count = 0;
+  t->start_time = GetNanosecond();
+  t->done = false;
   tracker_.push_back(t);
   return tracker_.size() - 1;
 }
@@ -58,19 +59,16 @@ void Customer::WaitRequest(int timestamp, uint64_t timeout_ms) {
     if (spin_count < kMaxSpinCount) {
       spin_count++;
     } else {
+      _mm_pause();
       uint64_t now = GetNanosecond(false);
       // 1s for timeout
       if (now - req->start_time > timeout_ns) {
         PS_LOG(FATAL) << "request timeout " << timeout_ms << "ms, handler "
                       << timestamp << " " << (now - req->start_time) / 1000
-                      << "us";
+                      << "us" << " " << req->response_count.load(std::memory_order_acquire) << " " << req->count.load(std::memory_order_acquire);
       }
-      // _mm_pause();
     }
   }
-#ifdef STEPMESH_ENABLE_TRACE
-  req->response.process = GetNanosecond();
-#endif  // STEPMESH_ENABLE_TRACE
 }
 
 int Customer::NumResponse(int timestamp) {
@@ -80,7 +78,7 @@ int Customer::NumResponse(int timestamp) {
 
 void Customer::AddResponse(int timestamp, int num) {
   // std::unique_lock<std::mutex> lk(tracker_mu_);
-  tracker_[timestamp]->response_count.fetch_add(num, std::memory_order_release);
+  tracker_[timestamp]->response_count += num; //.fetch_add(num, std::memory_order_release);
 }
 
 void Customer::Receiving() {
