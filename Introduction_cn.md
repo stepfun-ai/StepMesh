@@ -6,7 +6,7 @@
 
 AFD 对通信库提出了很高的延迟要求。对于一个 3 阶段的 AFD 流水线，如果要满足端到端 20 Tokens/s 的 SLA 约束，需要在 273us（本文第二部分会介绍 273us 的缘由）内完成所有 Attention 实例和 FFN 实例之间的数据传输。此外，像 NCCL 和 DeepEP 这样的通信库会引入额外的通信 SM 占用开销，影响 Attention 和 FFN 的计算速度。AF 分离还引入了一种新颖的二分图通信模式，这与现有的集合通信接口（如 AllReduce、AllToAll 等）不同。现有集合通信库对二分图通信没有良好的原生支持。虽然可以使用 ncclSend/ncclRecv 等接口组合满足功能需求，但它们不可避免地会牺牲性能。为了解决上述问题，我们开发了 StepMesh，一个基于 GPUDirect RDMA 的专门用于 AF 分离的通信库，它提供低延迟、零 SM 占用和灵活的二分图通信能力。
 
-基于对 AFD 通信模式的深入理解，开源项目 [**BytePs**](https://github.com/stepfun-ai/StepMesh) 能够完美适配 AFD 的通信需求，因此我们在 BytePS 代码基础上做了二次开发。对于基础通信组件，我们还是希望基于前人的肩膀做增量式的工作，不重复造轮子。同时，MegaScale-Infer 也为 AFD 系统的 MxN 通信库提供了参考设计。
+基于对 AFD 通信模式的深入理解，开源项目 [**BytePS**](https://github.com/bytedance/byteps) 能够完美适配 AFD 的通信需求，因此我们在 BytePS 代码基础上做了二次开发。对于基础通信组件，我们还是希望基于前人的肩膀做增量式的工作，不重复造轮子。同时，MegaScale-Infer 也为 AFD 系统的 MxN 通信库提供了参考设计。
 在这些上述已有工作的基础上，我们根据 Step-3 的推理流量特征需求，规划了 AFD 的通信时序（Timeline），以满足 AFD 系统对低延迟的严苛要求。此外，我们还在探索以及解决 AFD 系统的性能瓶颈——Straggler 问题。除了上述工作，我们还将介绍其他技术选择，包括对 NCCL，IBGDA（InfiniBand GPUDirect Async）和多后端（Backend）架构的思考与应用。
 
 ## AFD 流量特征
@@ -15,7 +15,7 @@ AFD 对通信库提出了很高的延迟要求。对于一个 3 阶段的 AFD �
 
 **<p align="center">图1： 通信开销约束，以 1A1F 3 级流水线为例</p>**
 
-在实际讨论 AFD 流量特征前，我们先展示 AFD 的通信约束。为简化分析（但不损失通用性），我们采取图 1 所示的 1A1F 3 级场景做讨论。图 1 中， $A_{1,1}$ 和 $A_{1,2}$ 分别表示 Layer 1 的 Micorbatch 1 和 2 的计算时间。如果要满足 20Tokens/s 的 SLA 约束，则 Time Per Output Token （TPOT）需要小于 50ms，即每层的计算和通信开销小于 50ms /# Layers。Step-3 具有 61 层，因此每层开销需要小于 819us。则有 $A_{1,1} + A_{1,2} + A_{1,3} \le 819us$ 。因为 Micorbatch 大小相同，则 $A_{x,y} \le 273us$ 。上述过程同样可以应用于 FFN 侧。如果进一步考虑通信，因为 $A_{1,1}$ 和 $A_{2,1}$ 之间存在数据依赖，因此 $A_{1,1}$ 所有相关的 FFN、通信过程都需要在 $A_{2,1}$ 发生前完成，因此有如下关系。
+在实际讨论 AFD 流量特征前，我们先展示 AFD 的通信约束。为简化分析（但不损失通用性），我们采取图 1 所示的 1A1F 3 级场景做讨论。图 1 中， $A_{1,1}$ 和 $A_{1,2}$ 分别表示 Layer 1 的 Microbatch 1 和 2 的计算时间。如果要满足 20Tokens/s 的 SLA 约束，则 Time Per Output Token （TPOT）需要小于 50ms，即每层的计算和通信开销小于 50ms /# Layers。Step-3 具有 61 层，因此每层开销需要小于 819us。则有 $A_{1,1} + A_{1,2} + A_{1,3} \le 819us$ 。因为 Microbatch 大小相同，则 $A_{x,y} \le 273us$ 。上述过程同样可以应用于 FFN 侧。如果进一步考虑通信，因为 $A_{1,1}$ 和 $A_{2,1}$ 之间存在数据依赖，因此 $A_{1,1}$ 所有相关的 FFN、通信过程都需要在 $A_{2,1}$ 发生前完成，因此有如下关系。
 
 $$A_{1,1} + F_{1,1} + A2F + F2A \le A_{1,1} + A_{1,2} + A_{1,3}  $$
 
@@ -26,7 +26,7 @@ $$A_{1,1} + F_{1,1} + A2F + F2A \le A_{1,1} + A_{1,2} + A_{1,3}  $$
 
 **<p align="center">图 2：StepMesh 通信模式，以 2A2F 3 级流水线（FFN 并行策略为 EP）为例</p>**
 
-下面我们介绍 AFD 通信模式。如图 2 所示，StepMesh 要求为不同的 Microbatch 预注册内存（StepMesh 中的注册是指 RDMA Register MemoryRegion，这是进行 RDMA 通信操作的前提）。上述设计会造成额外的显存开销，但是能够消除相同 Layer 不同 Microbatch 之间的数据依赖，提高 Overlap 程度。在通信过程，A2F Tensor（包括 Tokens，Expert Distribution 等）由 Attention Instance 广播给所有的 FFN Instance，同时告知用于接收当前 Microbatch FFN 计算结果的 F2A Tensor 地址。FFN 计算完成后则直接将计算结果（图 2 中 F2A Tensor，主要为 Activitions）直接 RDMA 发送到 Attention 对应的 Tensor 中。实际上 FFN Instance 还涉及到机内 AllGather 等通信操作，因为是由其余组件实现的，所以本文不讨论。
+下面我们介绍 AFD 通信模式。如图 2 所示，StepMesh 要求为不同的 Microbatch 预注册内存（StepMesh 中的注册是指 RDMA Register MemoryRegion，这是进行 RDMA 通信操作的前提）。上述设计会造成额外的显存开销，但是能够消除相同 Layer 不同 Microbatch 之间的数据依赖，提高 Overlap 程度。在通信过程，A2F Tensor（包括 Tokens，Expert Distribution 等）由 Attention Instance 广播给所有的 FFN Instance，同时告知用于接收当前 Microbatch FFN 计算结果的 F2A Tensor 地址。FFN 计算完成后则直接将计算结果（图 2 中 F2A Tensor，主要为 Activations）直接 RDMA 发送到 Attention 对应的 Tensor 中。实际上 FFN Instance 还涉及到机内 AllGather 等通信操作，因为是由其余组件实现的，所以本文不讨论。
 
 基于上述通信延迟约束以及通信模式，我们可以进一步分析 StepMesh 通信的预期吞吐。对于特定模型和芯片，FFN 所支持的 Batch Size 相对比较固定，并且不受 Context Length 变化影响，因此我们围绕 FFN GPU 做通信数据量和开销计算。表 1 中展示了技术报告中 2A2F（Batch Size=128）的通信量（Expert Distribution 通信量由于较小，本部分暂不考虑）以及满足 SLA 需求前提下的理想通信开销。例如，对于 A2F 方向，每个 FFN GPU 需要接收来自两个 Attention GPU 的数据，数据量为 Batch Size x Hidden Size，下表中为 128 x 7168，需要在 91us 内完成。需要注意的是表 1 中的通信开销不仅包括物理网络 RDMA 传输开销，还包括通信库收发的软件处理开销。
 
@@ -42,7 +42,7 @@ $$A_{1,1} + F_{1,1} + A2F + F2A \le A_{1,1} + A_{1,2} + A_{1,3}  $$
 
 ## StepMesh Timeline
 
-为实现上述目标，我们为 StepMesh 设计了如下 Timeline（以 3 级流水线为例）。当第 1 层的的 Microbatch 1 Attention 完成计算后，StepMesh 的 Net-Send 线程启动对 A2F Tensor 的 RDMA 发送操作，发送完成后，FFN 侧将接收到相应的信号，并启动 FFN 计算操作。在实际计算前，FFN 还需要执行一次 AllGather 操作，用于将不同 GPU 收到的 Tokens 分发到所有 FFN GPU。AllGather 完成后将执行后续计算操作。完成前置操作后，FFN 侧将调用 StepMesh 的 Net-Send 线程将计算结果发送至 Attention 侧。
+为实现上述目标，我们为 StepMesh 设计了如下 Timeline（以 3 级流水线为例）。当第 1 层的 Microbatch 1 Attention 计算完成后，StepMesh 的 Net-Send 线程启动对 A2F Tensor 的 RDMA 发送操作，发送完成后，FFN 侧将接收到相应的信号，并启动 FFN 计算操作。在实际计算前，FFN 还需要执行一次 AllGather 操作，用于将不同 GPU 收到的 Tokens 分发到所有 FFN GPU。AllGather 完成后将执行后续计算操作。完成前置操作后，FFN 侧将调用 StepMesh 的 Net-Send 线程将计算结果发送至 Attention 侧。
 
 ![StepMesh Timeline](docs/figs/timeline.png)
 
@@ -53,9 +53,9 @@ $$A_{1,1} + F_{1,1} + A2F + F2A \le A_{1,1} + A_{1,2} + A_{1,3}  $$
 
 ## StepMesh Straggler
 
-AFD 对于计算和通信延迟有着极高要求，当任意节点出现计算、通信过程的变慢都会明确反应在 TPOT 上。TPOT 最小数值代表了系统的性能上限，而对于实际运行的推理系统，我们则更关注 TPOT 平均值。偶发延迟抖动会使得 TPOT 的 P99 上升数十毫秒，进而影响其平均值和最终吞吐。节点的长期降速则会使的 TPOT 的最小值、均值、P99 同时上升。我们在实测中发现，抖动主要来源于以下几类接口的调用：ibv_poll_cq、cudaEventQuery 和 cudaLaunchKernel。因为根因涉及到硬件和驱动，超出我们的定位能力，所以暂未有明确结论。下面我们展示如何在运行的 AFD 系统“挖出”异常抖动节点和发生异常抖动的位点，以及当前我们所采取的抑制抖动的解决方案。
+AFD 对于计算和通信延迟有着极高要求，当任意节点出现计算、通信过程的变慢都会明确反应在 TPOT 上。TPOT 最小数值代表了系统的性能上限，而对于实际运行的推理系统，我们则更关注 TPOT 平均值。偶发延迟抖动会使得 TPOT 的 P99 上升数十毫秒，进而影响其平均值和最终吞吐。节点的长期降速则会使 TPOT 的最小值、均值、P99 同时上升。我们在实测中发现，抖动主要来源于以下几类接口的调用：ibv_poll_cq、cudaEventQuery 和 cudaLaunchKernel。因为根因涉及到硬件和驱动，超出我们的定位能力，所以暂未有明确结论。下面我们展示如何在运行的 AFD 系统“挖出”异常抖动节点和发生异常抖动的位点，以及当前我们所采取的抑制抖动的解决方案。
 
-在 AFD 通信时，Attention 端和 FFN 端接收在接收数据时，都会在接收到了所有对端发送来的包后再提交给应用层。因此所有节点上统计 TPOT 的数据会同步，无法展示出具体的 Straggler 节点。
+在 AFD 通信时，Attention 端和 FFN 端在接收数据时，都会在接收到了所有对端发送来的包后再提交给应用层。因此所有节点上统计 TPOT 的数据会同步，无法展示出具体的 Straggler 节点。
 
 ![Tracer](docs/figs/tracer.png)
 
@@ -69,9 +69,9 @@ AFD 对于计算和通信延迟有着极高要求，当任意节点出现计算�
   - CPU 异常，如干扰或降速等：异常 FFN 节点的 FFN Process 的数值轻微上升，而（Server Overall - FFN Process）明显升高；
   - GPU 或 NVLink 异常，如降频或显存错误：异常 FFN 节点 Server Overall 和 FFN Process 数值均升高；
 - Attention 端异常：
-  - CPU 异常：request_post_send - push_pull_star 和 attn_start - response_recv_msg 上升；
+  - CPU 异常：request_post_send - push_pull_start 和 attn_start - response_recv_msg 上升；
   - GPU 或 NVLink 异常：push_pull_start - attn_start 数值上升，即 Attention 计算时长上升；
-- 两侧收到包的时间戳（request/response recv_msg）与相应的 waiting 结束时间戳间的时间也可以反应对端的情况，当对端是慢节点时，这一等待时间会更短。
+- 两侧收到包的时间戳（request/response recv_msg）与相应的 waiting 结束时间戳间的时间也可以反映对端的情况，当对端是慢节点时，这一等待时间会更短。
 
 以上的分析均使用同一侧服务器的时间戳的差值进行分析，因此不需要多台服务器之间进行高精度时钟同步。
 
@@ -80,7 +80,7 @@ AFD 对于计算和通信延迟有着极高要求，当任意节点出现计算�
 在发现 Straggler 节点后，除了直接替换节点，我们还总结了常见的抖动原因和解决方案：
 
 - CPU 占用问题：其他进程，如监控进程、推理框架的进程等，对 CPU 的抢占会干扰 StepMesh 中 Polling 线程的运行，使得延迟增高，因此我们选择为 StepMesh 的每个线程都仔细设置了 CPU Core Affinity， 为了尽可能减少影响，我们还配置了 Linux kernel 的 isolcpus 的参数，将 StepMesh 线程都绑定在这些隔离的核心上；
-- GIL 问题： Python 调用 StepMesh 接口时，GIL 的释放与获取有概率造成较高延迟，因此我们选择让高频接口不再释放 gil，并将部分逻辑放在 C++中，如 get_batch 的多端同步和 repsond_vec 的批量返回；
+- GIL 问题： Python 调用 StepMesh 接口时，GIL 的释放与获取有概率造成较高延迟，因此我们选择让高频接口不再释放 GIL，并将部分逻辑放在 C++中，如 get_batch 的多端同步和 respond_vec 的批量返回；
 - CudaEvent 同步问题：CudaEventSync 等接口会有偶发的高延迟，因此我们根据通信逻辑，降低了其调用逻辑，并提供了 cudaEventQuery Polling 和 memory sync 两种更高性能的同步方式（可以通过环境变量切换）。
 
 本节讨论了 StepMesh 发现抖动节点的方式，以及抑制抖动的一些工程方法。目前在我们的测试中 TPOT 的最小数值和均值仍有约 2ms 的差距，需要更精细的监控和更深度的优化来进一步降低这一差值、提升性能。
