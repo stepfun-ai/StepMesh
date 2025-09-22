@@ -42,10 +42,9 @@ int Customer::NewRequest(int recver) {
   // from each server instance group
   int num = postoffice_->GetNodeIDs(recver).size() / postoffice_->group_size();
   auto* t = new CustomerTracker();
-  t->count.store(num);
-  t->response_count = 0;
-  t->start_time = GetNanosecond();
-  t->done = false;
+  t->count = num;
+  t->response_count.store(0);
+  t->start_time = GetNanosecond(false);
   tracker_.push_back(t);
   return tracker_.size() - 1;
 }
@@ -54,7 +53,7 @@ void Customer::WaitRequest(int timestamp, uint64_t timeout_ms) {
   uint64_t timeout_ns = timeout_ms * 1000000;
   auto* req = tracker_[timestamp];
   int spin_count = 0;
-  while (req->count.load(std::memory_order_acquire) !=
+  while (req->count !=
          req->response_count.load(std::memory_order_acquire)) {
     if (spin_count < kMaxSpinCount) {
       spin_count++;
@@ -65,7 +64,7 @@ void Customer::WaitRequest(int timestamp, uint64_t timeout_ms) {
       if (now - req->start_time > timeout_ns) {
         PS_LOG(FATAL) << "request timeout " << timeout_ms << "ms, handler "
                       << timestamp << " " << (now - req->start_time) / 1000
-                      << "us" << " " << req->response_count.load(std::memory_order_acquire) << " " << req->count.load(std::memory_order_acquire);
+                      << "us" << " " << req->response_count.load(std::memory_order_acquire) << " " << req->count;
       }
     }
   }
@@ -73,12 +72,12 @@ void Customer::WaitRequest(int timestamp, uint64_t timeout_ms) {
 
 int Customer::NumResponse(int timestamp) {
   // std::unique_lock<std::mutex> lk(tracker_mu_);
-  return tracker_[timestamp]->count.load(std::memory_order_acquire);
+  return tracker_[timestamp]->count;
 }
 
 void Customer::AddResponse(int timestamp, int num) {
   // std::unique_lock<std::mutex> lk(tracker_mu_);
-  tracker_[timestamp]->response_count += num; //.fetch_add(num, std::memory_order_release);
+  tracker_[timestamp]->response_count.fetch_add(num, std::memory_order_release);
 }
 
 void Customer::Receiving() {

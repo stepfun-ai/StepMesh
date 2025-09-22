@@ -29,13 +29,12 @@ namespace ps {
 class Postoffice;
 
 struct CustomerTracker {
-  std::atomic<int> count;
-  // std::atomic<int> response_count;
-  int response_count;
+  int count;
+  std::atomic<int> response_count;
   struct Trace request;
   struct Trace response;
   uint64_t start_time;
-  bool done;
+  bool done = false;
 };
 
 class Customer {
