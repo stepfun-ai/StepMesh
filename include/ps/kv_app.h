@@ -90,6 +90,7 @@ class KVWorker : public SimpleApp {
    */
   explicit KVWorker(int app_id, int customer_id, int instance_idx = 0)
       : SimpleApp() {
+    printf("KVWorker instance_idx,%d\n", instance_idx);
     postoffice_ = Postoffice::GetWorker(instance_idx);
     PS_VLOG(3) << "KVWorker " << instance_idx << " po@"
                << reinterpret_cast<uint64_t>(postoffice_);
@@ -207,7 +208,9 @@ class KVWorker : public SimpleApp {
    *
    * \param timestamp the timestamp returned by the push or pull
    */
-  void Wait(int timestamp) { obj_->WaitRequest(timestamp); }
+  void Wait(int timestamp, uint64_t timeout_ms = 10000) {
+    obj_->WaitRequest(timestamp, timeout_ms);
+  }
 
   /**
    * \brief zero-copy Push

@@ -244,7 +244,7 @@ export STEPMESH_CPU_START_OFFSET=10
 The following commands is an example for 2 server and 2 worker test.
 
 ```bash
-ROLE=server NUM_SERVER=2 NUM_WORKER=2 NODE_RANK=0 BIN=../benchmark/bmk_comm_latency_multiserver bash tests/fserver/run_multi_gpu.sh
+ROLE=server NUM_SERVER=1 NUM_WORKER=2 NODE_RANK=0 BIN=../benchmark/bmk_comm_latency_multiserver bash tests/fserver/run_multi_gpu.sh
 # the first line prints scheduler ip
 ```
 
@@ -254,7 +254,7 @@ ROLE=server-slave NUM_SERVER=2 NUM_WORKER=2 NODE_RANK=1 BIN=../benchmark/bmk_com
 
 
 ```bash
-ROLE=worker NUM_SERVER=2 NUM_WORKER=2 NODE_RANK=0 BIN=../benchmark/bmk_comm_latency_multiserver bash tests/fserver/run_multi_gpu.sh ${scheduler_ip}
+ROLE=worker NUM_SERVER=1 NUM_WORKER=2 NODE_RANK=1 BIN=../benchmark/bmk_comm_latency_multiserver bash tests/fserver/run_multi_gpu.sh 10.197.255.26 ${scheduler_ip}
 ```
 
 ```bash

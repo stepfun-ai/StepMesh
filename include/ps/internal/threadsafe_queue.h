@@ -10,6 +10,7 @@
 #include <queue>
 #include <utility>
 
+#include "dmlc/logging.h"
 #include "ps/base.h"
 #include "ps/internal/env.h"
 #include "ps/internal/spsc_queue.h"
@@ -34,10 +35,10 @@ class ThreadsafeQueue {
    * \brief push an value into the end. threadsafe.
    * \param new_value the value
    */
-  inline void Push(T new_value) {
+  inline void Push(T new_value, bool print_log = false) {
     if (lockless_) {
       // PushLockless(std::move(new_value));
-      PushAtomic(std::move(new_value));
+      PushAtomic(std::move(new_value), print_log);
       return;
     }
     {
@@ -51,10 +52,10 @@ class ThreadsafeQueue {
    * \brief wait until pop an element from the beginning, threadsafe
    * \param value the poped value
    */
-  inline void WaitAndPop(T* value) {
+  inline void WaitAndPop(T* value, bool print_log = false) {
     if (lockless_) {
       // WaitAndPopLockless(value);
-      WaitAndPopAtomic(value);
+      WaitAndPopAtomic(value, print_log);
       return;
     }
     std::unique_lock<std::mutex> lk(mu_);
@@ -96,7 +97,7 @@ class ThreadsafeQueue {
     }
   }
 
-  void PushAtomic(T new_value) {
+  void PushAtomic(T new_value, bool print_log = false) {
     const size_t current_tail = tail_.load(std::memory_order_relaxed);
     const size_t next_tail = (current_tail + 1) % capacity_;
     while (next_tail == head_.load(std::memory_order_acquire)) {
@@ -112,19 +113,19 @@ class ThreadsafeQueue {
     return;
   }
 
-  void WaitAndPopAtomic(T* value) {
-    const size_t current_head = head_.load(std::memory_order_relaxed);
-
+  void WaitAndPopAtomic(T* value, bool print_log = false) {
+    size_t current_head = head_.load(std::memory_order_relaxed);
     // Check if the queue is empty
     // acquire: ensures writes preceding this load in other threads are
     // visible. Specifically, ensures the producer's writes to 'tail_' are
     // visible.
-    int max_count = 1000;
+    int max_count = 5000;
     int count = 0;
     while (current_head == tail_.load(std::memory_order_acquire)) {
       // Queue is empty, spin and yield
       count++;
       if (count > max_count) {
+        current_head = head_.load(std::memory_order_relaxed);
         count = 0;
         // _mm_pause();
       }

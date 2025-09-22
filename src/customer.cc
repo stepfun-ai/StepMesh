@@ -8,6 +8,7 @@
 #include <emmintrin.h>
 
 #include <atomic>
+#include <cstdint>
 #include <fstream>
 #include <limits>
 #include <list>
@@ -43,11 +44,13 @@ int Customer::NewRequest(int recver) {
   auto* t = new CustomerTracker();
   t->count.store(num);
   t->response_count.store(0);
+  t->start_time = GetNanosecond(false);
   tracker_.push_back(t);
   return tracker_.size() - 1;
 }
 
-void Customer::WaitRequest(int timestamp) {
+void Customer::WaitRequest(int timestamp, uint64_t timeout_ms) {
+  uint64_t timeout_ns = timeout_ms * 1000000;
   auto* req = tracker_[timestamp];
   int spin_count = 0;
   while (req->count.load(std::memory_order_acquire) !=
@@ -55,6 +58,13 @@ void Customer::WaitRequest(int timestamp) {
     if (spin_count < kMaxSpinCount) {
       spin_count++;
     } else {
+      uint64_t now = GetNanosecond(false);
+      // 1s for timeout
+      if (now - req->start_time > timeout_ns) {
+        PS_LOG(FATAL) << "request timeout " << timeout_ms << "ms, handler "
+                      << timestamp << " " << (now - req->start_time) / 1000
+                      << "us";
+      }
       // _mm_pause();
     }
   }
@@ -108,6 +118,8 @@ void Customer::DirectProcess(Message& recv) {
     t->request = recv.meta.request_trace;
     t->response = recv.meta.response_trace;
 #endif  // STEPMESH_ENABLE_TRACE
+    PS_VLOG(4) << "recv response " << recv.meta.timestamp << " "
+               << recv.meta.DebugString();
     t->response_count.fetch_add(1, std::memory_order_release);
   }
 }

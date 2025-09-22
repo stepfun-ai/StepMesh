@@ -190,7 +190,7 @@ class LogMessage {
 #endif
   {
     log_stream_ << "[" << pretty_date_.HumanDate() << "] "
-                << getenv("DMLC_ROLE") << " " << file << ":" << line << ": ";
+                << getenv("DMLC_ROLE") << " " << getenv("STEPMESH_GPU") << " " << file << ":" << std::dec << line << ": ";
   }
   ~LogMessage() { log_stream_ << "\n"; }
   std::ostream &stream() { return log_stream_; }

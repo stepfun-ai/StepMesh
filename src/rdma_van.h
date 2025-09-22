@@ -329,6 +329,7 @@ class RDMAVan : public Van {
     PS_CHECK(meta_len);
 
     RegisterMemory(msg);
+    PS_VLOG(4) << "2.0 Reg Done ";
     // pack meta info
     if (IsValidPushpull(msg)) {
       AddMeta(msg);
@@ -358,18 +359,23 @@ class RDMAVan : public Van {
 #else
     MessageBuffer *msg_buf = std::get<3>(addr_tuple);  // local message buffer
 #endif
+    // print detail of msg_buf as one line
 
     // prepare new meta and data
     PS_CHECK_EQ(msg_buf->inline_len, (size_t)meta_len);
     PS_CHECK(msg_buf->inline_buf);
-    msg_buf->data = msg.data;  // may not need this
+    PS_VLOG(4) << "2.1 inline_buf done";
+    for (size_t i = 0; i < msg.data.size(); i++) {
+      msg_buf->data[i] = msg.data[i];
+    }
+    PS_VLOG(4) << "2.2 copy done";
 
     if (msg.meta.tensor_ev != nullptr) {
       msg.meta.tensor_ev->Sync();
       msg.meta.tensor_ev->Release();
       msg.meta.tensor_ev = nullptr;
     }
-
+    PS_VLOG(4) << "2.3 sync done";
 #ifdef STEPMESH_ENABLE_TRACE
     if (msg.meta.request) {
       msg.meta.request_trace.postsend = GetNanosecond();
@@ -400,6 +406,7 @@ class RDMAVan : public Van {
     } else {
       PS_CHECK(0) << "unexpected message type";
     }
+    PS_VLOG(4) << "2.4 send done" << msg.DebugString();
     return total_len;
   }
 
@@ -424,6 +431,8 @@ class RDMAVan : public Van {
     char *meta_buf = buffer_ctx->buffer;
     PS_CHECK(meta_buf);
 #endif
+
+    PS_VLOG(3) << "3. 1 RecvMsg: " << msg->DebugString();
 
     RawMeta *raw = reinterpret_cast<RawMeta *>(meta_buf);
 
@@ -670,7 +679,8 @@ class RDMAVan : public Van {
     for (auto &sa : msg.data) {
       if (sa.size() == 0) continue;
       std::lock_guard<std::mutex> lock(map_mu_);
-      if ((mem_mr_.find(sa.data()) == mem_mr_.end()) &&
+      if ((mem_mr_.find(sa.data()) == mem_mr_.end() ||
+           mem_mr_[sa.data()]->length < sa.size()) &&
           (sa_cnt == 1)) {  // only vals register memory
         struct ibv_mr *temp_mr;
         temp_mr = ibv_reg_mr(mem_allocator_->GetPD(), sa.data(), sa.size(),
@@ -690,7 +700,8 @@ class RDMAVan : public Van {
       PS_CHECK_GT(msg.meta.val_len, 0) << msg.meta.val_len;
       auto addr = reinterpret_cast<char *>(msg.meta.addr);
       std::lock_guard<std::mutex> lock(map_mu_);
-      if (mem_mr_.find(addr) == mem_mr_.end()) {
+      if (mem_mr_.find(addr) == mem_mr_.end() ||
+          mem_mr_[addr]->length < msg.meta.val_len) {
         struct ibv_mr *temp_mr;
         temp_mr = ibv_reg_mr(mem_allocator_->GetPD(), addr, msg.meta.val_len,
                              IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
@@ -767,7 +778,9 @@ class RDMAVan : public Van {
   void PollCQ() {
     // Pre-allocated work completions array used for polling
     struct ibv_wc wc[kMaxConcurrentWorkRequest];
-    BindCpuCore(1, 1);
+    if (!postoffice_->is_scheduler()) {
+      BindCpuCore(1, 1);
+    }
 
     while (!should_stop_.load()) {
       int ne = ibv_poll_cq(cq_, kMaxConcurrentWorkRequest, wc);

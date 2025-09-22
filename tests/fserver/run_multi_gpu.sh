@@ -21,6 +21,7 @@ export DMLC_PS_ROOT_URI=$SCHEDULER_IP  # scheduler's RDMA interface IP
 export DMLC_ENABLE_RDMA=ibverbs
 export NCCL_DEBUG=warning
 export STEPMESH_SPLIT_QP_LAG=1
+export STEPMESH_BIND_CPU_CORE=1
 
 # export PS_VERBOSE=2
 

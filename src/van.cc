@@ -705,7 +705,9 @@ int Van::Send(Message &msg) {
 }
 
 void Van::Receiving() {
-  BindCpuCore(2, 1);
+  if (!is_scheduler_) {
+    BindCpuCore(2, 1);
+  }
   Meta nodes;
   Meta recovery_nodes;  // store recovery nodes
   recovery_nodes.control.cmd = Control::ADD_NODE;
