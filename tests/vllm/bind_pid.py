@@ -38,14 +38,14 @@ def bind_pid(pid, local_rank):
     gpu_id = local_rank_to_gpu_id(local_rank)
     core_count = get_system_cpu_count()    
     core_list  = list(range(core_count))
-    core_per_socket = core_count//2
+    core_per_socket = core_count//4
     # mask 10-20,34-44,58-68,82-92,106-116,130-140,154-164,178-188
     mask = list(range(10,21)) + list(range(34,45)) + list(range(58,69)) + list(range(82,93)) + list(range(106,117)) + list(range(130,141)) + list(range(154,165)) + list(range(178,189))
 
     core_list = []
-    core_per_gpu = core_per_socket // 4
-    gpu_id = 2*(gpu_id//2)
-    for v in list(range(core_per_gpu * gpu_id, core_per_gpu * (gpu_id + 1))) + list(range(core_per_gpu * gpu_id + core_per_socket * 2, core_per_gpu * (gpu_id + 1) + core_per_socket * 2)):
+    core_per_gpu = core_per_socket // 2
+    gpu_offset_id = gpu_id // 2
+    for v in list(range(core_per_gpu * gpu_offset_id, core_per_gpu * (gpu_offset_id + 1))) + list(range(core_per_gpu * gpu_offset_id + core_per_socket * 2, core_per_gpu * (gpu_offset_id + 1) + core_per_socket * 2)):
         if v not in mask:
             core_list.append(v)
 

@@ -44,6 +44,7 @@ int Customer::NewRequest(int recver) {
   auto* t = new CustomerTracker();
   t->count = num;
   t->response_count.store(0);
+  t->response_count_cache = 0;
   t->start_time = GetNanosecond(false);
   tracker_.push_back(t);
   return tracker_.size() - 1;
@@ -118,6 +119,7 @@ void Customer::DirectProcess(Message& recv) {
     PS_VLOG(4) << "recv response " << recv.meta.timestamp << " "
                << recv.meta.DebugString();
     t->response_count.fetch_add(1, std::memory_order_release);
+    t->response_count_cache += 1;
   }
 }
 

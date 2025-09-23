@@ -9,6 +9,7 @@ from cycle import get_cycles_per_ms
 from bind_pid import set_numa_affinity
 import torch.profiler
 
+
 os.environ['STEPMESH_BIND_CPU_CORE']='1'
 os.environ['STEPMESH_CONNECTOR_DEBUG']='true'
 os.environ['STEPMESH_SPLIT_QP_LAG']='1'
@@ -48,36 +49,33 @@ time.sleep(5)
 connector.init_afd_connector()
 print(f"--------- rank {rank} local_rank {local_rank} init ---------")
 
-
-
 if __name__ == "__main__":
     counter = 0
     s = torch.cuda.Stream()
     torch.cuda.set_stream(s)
     profiler = None
+    hidden_states = [torch.randn(4, 7168, dtype=torch.bfloat16, device="cuda")   for i in range(afd_config.num_afd_stages)]
     while True:
         if counter % (1830*2) == 0:
             connector.print_trace()
-            torch.cuda.synchronize()
 
-        hidden_states = torch.randn(4, 7168, dtype=torch.bfloat16, device="cuda")    
         for layer_idx in range(61):
             for stage_idx in range(afd_config.num_afd_stages):
                 counter += 1
                 if layer_idx > 0:
                     connector.recv_ffn_output()
                 
-                torch.cuda._sleep(int(cycle_per_ms * 0.20))
+                # torch.cuda._sleep(int(cycle_per_ms * 0.1))
+                time.sleep(0.0002)
                 # cpu sleep 100us 
-                time.sleep(0.0001)
                 connector.send_attn_output(
-                    hidden_states,
+                    hidden_states[stage_idx],
                     AFDConnectorMetadata.create_attention_metadata(
                         layer_idx,
                         stage_idx,
-                        hidden_states.shape[0],
-                        hidden_states.dtype,
-                        hidden_states.device,
+                        hidden_states[stage_idx].shape[0],
+                        hidden_states[stage_idx].dtype,
+                        hidden_states[stage_idx].device,
                     )
                 )
 
@@ -89,10 +87,10 @@ if __name__ == "__main__":
                         on_trace_ready=torch.profiler.tensorboard_trace_handler(f'./profiler_logs/rank_{rank}', use_gzip=True),
                         record_shapes=True,
                         with_stack=True,
-                        experimental_config=torch.profiler._ExperimentalConfig(
-                            verbose=True,     # 启用详细日志
-                            enable_cuda_sync_events=True  # 启用CUDA同步事件跟踪
-                        )
+                        # experimental_config=torch.profiler._ExperimentalConfig(
+                        #     verbose=True,     # 启用详细日志
+                        #     enable_cuda_sync_events=True  # 启用CUDA同步事件跟踪
+                        # )
                     )
                     profiler.start()
                     print(f"Rank {rank}: Started profiler at counter {counter}, will warmup 100 steps then record 1000 steps with gzip compression")
@@ -107,5 +105,6 @@ if __name__ == "__main__":
 
         for i in range(afd_config.num_afd_stages):
             connector.recv_ffn_output()
+        time.sleep(0.01)
         torch.cuda.synchronize()
-        time.sleep(0.02)
+        time.sleep(0.01)

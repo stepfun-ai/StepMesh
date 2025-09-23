@@ -31,6 +31,7 @@ class Postoffice;
 struct CustomerTracker {
   int count;
   std::atomic<int> response_count;
+  int response_count_cache;
   struct Trace request;
   struct Trace response;
   uint64_t start_time;
