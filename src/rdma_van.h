@@ -208,39 +208,34 @@ class RDMAVan : public Van {
                       nullptr, &remote_addr),
           0);
 
+      struct addrinfo *addr = nullptr;
+      auto val = Environment::Get()->find("DMLC_NODE_HOST");
+      if (val) {
+        auto rc = getaddrinfo(val, "", NULL, &addr);
+        PS_CHECK_EQ(rc, 0) << "getaddrinfo failed: " << gai_strerror(rc);
+      }
+
       while (!endpoint->GetAllStatus(Endpoint::CONNECTED)) {
         std::unique_lock<std::mutex> lk(endpoint->connect_mu);
-        endpoint->SetAllStatus(Endpoint::CONNECTING);
-
         FOR_QPS {
-          if (endpoint->cm_ids[qpIndex] != nullptr) {
-            rdma_destroy_qp(endpoint->cm_ids[qpIndex]);
-            PS_CHECK_EQ(rdma_destroy_id(endpoint->cm_ids[qpIndex]), 0)
-                << strerror(errno);
-            endpoint->cm_ids[qpIndex] = nullptr;
-          }
-          PS_CHECK_EQ(rdma_create_id(event_channel_, &endpoint->cm_ids[qpIndex],
-                                     nullptr, RDMA_PS_TCP),
-                      0)
-              << "Create RDMA connection identifier failed";
-          endpoint->cm_ids[qpIndex]->context = endpoint;
-        }
-        auto val = Environment::Get()->find("DMLC_NODE_HOST");
-        if (val) {
-          struct addrinfo *addr;
-          auto rc = getaddrinfo(val, "", NULL, &addr);
-          PS_CHECK_EQ(rc, 0) << "getaddrinfo failed: " << gai_strerror(rc);
-          FOR_QPS {
+          if (endpoint->status_list[qpIndex] != Endpoint::CONNECTING &&
+              endpoint->status_list[qpIndex] != Endpoint::CONNECTED) {
+            if (endpoint->cm_ids[qpIndex] != nullptr) {
+              rdma_destroy_qp(endpoint->cm_ids[qpIndex]);
+              PS_CHECK_EQ(rdma_destroy_id(endpoint->cm_ids[qpIndex]), 0)
+                  << strerror(errno);
+              endpoint->cm_ids[qpIndex] = nullptr;
+            }
             PS_CHECK_EQ(
-                rdma_resolve_addr(endpoint->cm_ids[qpIndex], addr->ai_addr,
-                                  remote_addr->ai_addr, kTimeoutms),
+                rdma_create_id(event_channel_, &endpoint->cm_ids[qpIndex],
+                               nullptr, RDMA_PS_TCP),
                 0)
-                << "Resolve RDMA address failed with errno: "
-                << strerror(errno);
-          }
-        } else {
-          FOR_QPS {
-            PS_CHECK_EQ(rdma_resolve_addr(endpoint->cm_ids[qpIndex], nullptr,
+                << "Create RDMA connection identifier failed";
+            endpoint->cm_ids[qpIndex]->context = endpoint;
+            endpoint->status_list[qpIndex] = Endpoint::CONNECTING;
+
+            PS_CHECK_EQ(rdma_resolve_addr(endpoint->cm_ids[qpIndex],
+                                          addr ? addr->ai_addr : nullptr,
                                           remote_addr->ai_addr, kTimeoutms),
                         0)
                 << "Resolve RDMA address failed with errno: "
@@ -250,7 +245,7 @@ class RDMAVan : public Van {
 
         endpoint->cv.wait(lk, [endpoint] {
           // return endpoint->status != Endpoint::CONNECTING;
-          return !endpoint->GetAllStatus(Endpoint::CONNECTING);
+          return endpoint->GetAllStatus(Endpoint::CONNECTING, false);
         });
 
         if (endpoint->GetAllStatus(Endpoint::CONNECTED)) break;
@@ -966,7 +961,7 @@ class RDMAVan : public Van {
                << " connection rejected, retrying...";
     {
       std::lock_guard<std::mutex> lk(endpoint->connect_mu);
-      endpoint->SetAllStatus(Endpoint::REJECTED);
+      endpoint->SetStatus(id, Endpoint::REJECTED);
     }
     endpoint->cv.notify_all();
   }
@@ -1114,7 +1109,7 @@ class RDMAVan : public Van {
     {
       std::lock_guard<std::mutex> lk(endpoint->connect_mu);
       // endpoint->status = Endpoint::IDLE;
-      endpoint->SetAllStatus(Endpoint::IDLE);
+      endpoint->SetStatus(id, Endpoint::IDLE);
     }
     endpoint->cv.notify_all();
     LOG(INFO) << my_node_.id << " OnDisconnected from " << endpoint->node_id;

@@ -125,14 +125,22 @@ struct Endpoint {
 
   std::shared_ptr<Transport> GetTransport() { return trans; }
 
-  bool GetAllStatus(ConnectionStatus s) {
+  inline bool GetAllStatus(ConnectionStatus s, bool eq = true) {
     bool ret = true;
-    FOR_QPS { ret &= (s == status_list[qpIndex]); }
+    if (eq) {
+      FOR_QPS { ret &= (s == status_list[qpIndex]); }
+    } else {
+      FOR_QPS { ret &= (s != status_list[qpIndex]); }
+    }
     return ret;
   }
 
-  void SetAllStatus(ConnectionStatus s) {
-    FOR_QPS { status_list[qpIndex] = s; }
+  inline void SetStatus(struct rdma_cm_id *id, ConnectionStatus s) {
+    FOR_QPS {
+      if (cm_ids[qpIndex] == id) {
+        status_list[qpIndex] = s;
+      }
+    }
   }
 
   void Disconnect() {
