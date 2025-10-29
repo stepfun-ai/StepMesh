@@ -294,7 +294,7 @@ class AFTensorWorker {
       msg.meta.dtype = static_cast<int>(tensor.scalar_type());
       msg.meta.shape.clear();
       for (int64_t s = 0; s < tensor.dim(); s++) {
-        msg.meta.shape.push_back(tensor.size(i));
+        msg.meta.shape.push_back(tensor.size(s));
       }
       msg.data.clear();
       msg.AddData(key);
