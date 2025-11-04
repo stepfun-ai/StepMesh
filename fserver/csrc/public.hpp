@@ -15,7 +15,7 @@
 
 #include <chrono>
 
-#include "./util.h"
+#include "./util.hpp"
 
 #ifndef PUBLIC_OPS_
 #define PUBLIC_OPS_
@@ -237,7 +237,7 @@ uint64_t get_nanosecond() {
 
 
 void pybind_public(py::module &m){
-      m.def("init", &init, py::call_guard<py::gil_scoped_release>());
+  m.def("init", &init, py::call_guard<py::gil_scoped_release>());
   m.def("stop", &stop, py::call_guard<py::gil_scoped_release>());
 
   m.def("register_recv_buffer",

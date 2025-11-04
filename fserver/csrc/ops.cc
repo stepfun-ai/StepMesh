@@ -1,12 +1,18 @@
 /* Copyright (c) 2025, StepFun Authors. All rights reserved. */
 
 
-#include "./util.h"
+#include "./util.hpp"
 
 #include "./public.hpp"
-#include "./private.hpp"
+#ifdef DMLC_USE_CUDA
+  #include "./private.hpp"
+  #include "./kernel.hpp"
+#endif
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   pybind_public(m);
+#ifdef DMLC_USE_CUDA
   pybind_private(m);
+  pybind_kernel(m);
+#endif
 }

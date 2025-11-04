@@ -62,7 +62,7 @@ if __name__ == "__main__":
     if use_cuda:
         extra_link += ['-lcuda', '-lcudart']
         extra_compile_args['cxx'] += ['-DDMLC_USE_CUDA',]
-        extra_compile_args['nvcc'] = ['-O3', '-gencode', 'arch=compute_70,code=sm_70', 
+        extra_compile_args['nvcc'] = ['-O3', '-gencode', 'arch=compute_80,code=sm_80', 
                 '--use_fast_math'] + cc_flag
         bare_metal_major, bare_metal_minor = \
             _get_cuda_bare_metal_version(cpp_extension.CUDA_HOME)
@@ -84,6 +84,7 @@ if __name__ == "__main__":
                 'fserver_lib',
                 [
                     __SRC_PATH__ + 'ops.cc',
+                    __SRC_PATH__ + 'wait_kernel.cu',
                 ],
                 extra_compile_args=extra_compile_args,
                 extra_link_args=extra_link,
