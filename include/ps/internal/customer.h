@@ -13,9 +13,9 @@
 #include <utility>
 #include <vector>
 
+#include "ps/hash_table8.hpp"
 #include "ps/internal/message.h"
 #include "ps/internal/threadsafe_queue.h"
-#include "ps/hash_table8.hpp"
 namespace ps {
 /**
  * \brief The object for communication.

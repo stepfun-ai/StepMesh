@@ -19,10 +19,10 @@
 #include <vector>
 
 #include "ps/base.h"
+#include "ps/hash_table8.hpp"
 #include "ps/internal/backend.h"
 #include "ps/internal/utils.h"
 #include "ps/kv_app.h"
-#include "ps/hash_table8.hpp"
 
 namespace ps {
 

@@ -54,8 +54,7 @@ void Customer::WaitRequest(int timestamp, uint64_t timeout_ms) {
   uint64_t timeout_ns = timeout_ms * 1000000;
   auto* req = tracker_[timestamp];
   int spin_count = 0;
-  while (req->count !=
-         req->response_count.load(std::memory_order_acquire)) {
+  while (req->count != req->response_count.load(std::memory_order_acquire)) {
     if (spin_count < kMaxSpinCount) {
       spin_count++;
     } else {
@@ -65,7 +64,10 @@ void Customer::WaitRequest(int timestamp, uint64_t timeout_ms) {
       if (now - req->start_time > timeout_ns) {
         PS_LOG(FATAL) << "request timeout " << timeout_ms << "ms, handler "
                       << timestamp << " " << (now - req->start_time) / 1000
-                      << "us" << " " << req->response_count.load(std::memory_order_acquire) << " " << req->count;
+                      << "us"
+                      << " "
+                      << req->response_count.load(std::memory_order_acquire)
+                      << " " << req->count;
       }
     }
   }
