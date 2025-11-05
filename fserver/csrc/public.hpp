@@ -121,7 +121,8 @@ void respond_vec(torch::Tensor& ret_buffer,
 int push_pull(std::vector<torch::Tensor>& push_tensors,
               std::vector<uint64_t>& push_keys,
               std::vector<torch::Tensor>& pull_tensors,
-              std::vector<uint64_t>& pull_keys) {
+              std::vector<uint64_t>& pull_keys,
+              bool need_event = true) {
 
   PS_CHECK_EQ(push_tensors.size(), push_keys.size());
   PS_CHECK_EQ(pull_tensors.size(), pull_keys.size());
@@ -138,7 +139,7 @@ int push_pull(std::vector<torch::Tensor>& push_tensors,
         static_cast<uint64_t>(pull_keys[i]), std::move(pull_tensors[i].detach())
     };
   }
-  return fworker_->ZBatchPushPull(push_batch, pull_batch);
+  return fworker_->ZBatchPushPull(push_batch, pull_batch, need_event);
 }
 
 void wait(int handler, uint64_t timeout_ms = 1000) {
@@ -250,6 +251,7 @@ void pybind_public(py::module &m){
     py::arg("push_keys"),
     py::arg("pull_tensors"),
     py::arg("pull_keys"),
+    py::arg("need_event") = true,
     py::call_guard<py::none>());
   m.def("wait", &wait, 
     py::arg("handler"),

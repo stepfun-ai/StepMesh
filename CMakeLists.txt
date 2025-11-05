@@ -3,7 +3,13 @@ cmake_minimum_required(VERSION 3.22 FATAL_ERROR)
 project(af LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -fPIC -O3 -Wall -finline-functions  -msse2 ")
+execute_process(COMMAND ${Python_EXECUTABLE}
+        -c "import torch; print(int(torch.compiled_with_cxx11_abi()))"
+        OUTPUT_VARIABLE TORCH_CXX11_ABI OUTPUT_STRIP_TRAILING_WHITESPACE)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -fPIC -O3 -Wall -finline-functions -msse2 -D_GLIBCXX_USE_CXX11_ABI=${TORCH_CXX11_ABI} ")
+
+
+# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -fPIC -O3 -Wall -finline-functions  -msse2 ")
 
 # import pytorch library
 find_package (Python COMPONENTS Interpreter Development)
@@ -19,7 +25,9 @@ find_package(Torch REQUIRED CONFIG)
 message("MY TORCH_INCLUDE_DIRS ${TORCH_INCLUDE_DIRS}")
 message("MY CUDA_INCLUDE_DIRS ${CUDA_INCLUDE_DIRS}")
 include_directories(${TORCH_INCLUDE_DIRS})
+# Save ABI setting before adding TORCH_CXX_FLAGS (which might override it)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
+# Ensure ABI setting is preserved after TORCH_CXX_FLAGS
 
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/Modules)
