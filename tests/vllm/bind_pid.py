@@ -31,24 +31,24 @@ def local_rank_to_gpu_id(local_rank):
         return ascend_rt_visible_devices[local_rank]
     else:
         return cuda_visible_devices[local_rank] if cuda_visible_devices else local_rank
-
+# %%
 def bind_pid(pid, local_rank):
+    if pid == 0:
+        pid = os.getpid()
     gpu_id = local_rank_to_gpu_id(local_rank)
     core_count = get_system_cpu_count()    
     core_list  = list(range(core_count))
     core_per_socket = core_count//4
     # mask 10-20,34-44,58-68,82-92,106-116,130-140,154-164,178-188
     mask = list(range(10,21)) + list(range(34,45)) + list(range(58,69)) + list(range(82,93)) + list(range(106,117)) + list(range(130,141)) + list(range(154,165)) + list(range(178,189))
-    if gpu_id < 4:
-        core_list = []
-        for v in list(range(2,core_per_socket)) + list(range(2 +core_per_socket * 2, core_per_socket * 3)):
-            if v not in mask:
-                core_list.append(v)
-    else:
-        core_list = []
-        for v in list(range(core_per_socket , core_per_socket * 2)) + list(range(core_per_socket * 3, core_per_socket * 4)):
-            if v not in mask:
-                core_list.append(v)
+
+    core_list = []
+    core_per_gpu = core_per_socket // 2
+    gpu_offset_id = gpu_id // 2
+    for v in list(range(core_per_gpu * gpu_offset_id, core_per_gpu * (gpu_offset_id + 1))) + list(range(core_per_gpu * gpu_offset_id + core_per_socket * 2, core_per_gpu * (gpu_offset_id + 1) + core_per_socket * 2)):
+        if v not in mask:
+            core_list.append(v)
+
     try:
         os.sched_setaffinity(pid, core_list)
         assgined = os.sched_getaffinity(pid)

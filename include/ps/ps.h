@@ -72,11 +72,11 @@ inline Node::Role GetRole(const std::string &role_str) {
 inline void _StartPS(int customer_id, Node::Role role, int rank,
                      bool do_barrier, const char *argv0, int instance_idx) {
   if (role == Node::WORKER) {
-    BindCpuCore(0, 1);
+    // BindCpuCore(0, 1);
     Postoffice::GetWorker(instance_idx)
         ->Start(customer_id, role, rank, do_barrier, argv0);
   } else if (role == Node::SERVER) {
-    BindCpuCore(0, 1);
+    // BindCpuCore(0, 1);
     Postoffice::GetServer(instance_idx)
         ->Start(customer_id, role, rank, do_barrier, argv0);
   } else if (role == Node::SCHEDULER) {

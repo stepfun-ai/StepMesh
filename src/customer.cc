@@ -21,7 +21,7 @@ namespace ps {
 
 const int Node::kEmpty = std::numeric_limits<int16_t>::max();
 const int Meta::kEmpty = std::numeric_limits<int16_t>::max();
-const int kMaxSpinCount = 1000;
+const int kMaxSpinCount = 10000;
 
 Customer::Customer(int app_id, int customer_id,
                    const Customer::RecvHandle& recv_handle,
@@ -42,8 +42,9 @@ int Customer::NewRequest(int recver) {
   // from each server instance group
   int num = postoffice_->GetNodeIDs(recver).size() / postoffice_->group_size();
   auto* t = new CustomerTracker();
-  t->count.store(num);
+  t->count = num;
   t->response_count.store(0);
+  t->response_count_cache = 0;
   t->start_time = GetNanosecond(false);
   tracker_.push_back(t);
   return tracker_.size() - 1;
@@ -53,29 +54,28 @@ void Customer::WaitRequest(int timestamp, uint64_t timeout_ms) {
   uint64_t timeout_ns = timeout_ms * 1000000;
   auto* req = tracker_[timestamp];
   int spin_count = 0;
-  while (req->count.load(std::memory_order_acquire) !=
-         req->response_count.load(std::memory_order_acquire)) {
+  while (req->count != req->response_count.load(std::memory_order_acquire)) {
     if (spin_count < kMaxSpinCount) {
       spin_count++;
     } else {
+      _mm_pause();
       uint64_t now = GetNanosecond(false);
       // 1s for timeout
       if (now - req->start_time > timeout_ns) {
         PS_LOG(FATAL) << "request timeout " << timeout_ms << "ms, handler "
                       << timestamp << " " << (now - req->start_time) / 1000
-                      << "us";
+                      << "us"
+                      << " "
+                      << req->response_count.load(std::memory_order_acquire)
+                      << " " << req->count;
       }
-      // _mm_pause();
     }
   }
-#ifdef STEPMESH_ENABLE_TRACE
-  req->response.process = GetNanosecond();
-#endif  // STEPMESH_ENABLE_TRACE
 }
 
 int Customer::NumResponse(int timestamp) {
   // std::unique_lock<std::mutex> lk(tracker_mu_);
-  return tracker_[timestamp]->count.load(std::memory_order_acquire);
+  return tracker_[timestamp]->count;
 }
 
 void Customer::AddResponse(int timestamp, int num) {
@@ -121,6 +121,7 @@ void Customer::DirectProcess(Message& recv) {
     PS_VLOG(4) << "recv response " << recv.meta.timestamp << " "
                << recv.meta.DebugString();
     t->response_count.fetch_add(1, std::memory_order_release);
+    t->response_count_cache += 1;
   }
 }
 

@@ -7,13 +7,19 @@ import time
 from bind_pid import set_numa_affinity, bind_pid
 from cycle import get_cycles_per_ms
 from stepmesh_connector import StepMeshAFDConnector,AFDConnectorMetadata
-# from vllm.distributed.afd_transfer.afd_connector.stepmesh_connector import StepMeshAFDConnector,AFDConnectorMetadata
 
 import numpy as np
 
 os.environ['STEPMESH_BIND_CPU_CORE']='1'
 os.environ['STEPMESH_CONNECTOR_DEBUG']='true'
 os.environ['STEPMESH_SPLIT_QP_LAG']='1'
+
+'''
+export STEPMESH_BIND_CPU_CORE=1
+export STEPMESH_CONNECTOR_DEBUG=true
+export STEPMESH_SPLIT_QP_LAG=1
+export VLLM_TORCH_PROFILER_DIR=prof
+'''
 
 ip="10.203.8.15"
 
@@ -57,17 +63,9 @@ connector.init_afd_connector()
 # set_numa_affinity(local_rank)
 import fserver_lib as ps
 ret_buffer = torch.rand([65535, 7168], dtype=torch.bfloat16, device='cuda')
-def execute():
-    # hidden_states, metadata = connector.recv_attn_output()
-    # ffn_output = torch.empty_like(hidden_states,device="cuda")
-    # connector.send_ffn_output(ffn_output, metadata)
-    batches = ps.get_batch()
-    if len(batches) != 0:
-        recv_tensor_list = [batches[i][1][0] for i in range(1)]
-        comm_id_list = [batches[i][0] for i in range(1)]
-        torch.cuda._sleep(int(cycle_per_ms * 0.26))
 
-        ps.respond_vec(ret_buffer, recv_tensor_list, comm_id_list)
+
+s = torch.cuda.Stream()
 
 if __name__ == "__main__":
     counter = 0
@@ -78,7 +76,7 @@ if __name__ == "__main__":
             print(f"Respond {rank} counter {counter}")
         
         # 在counter为10000~11100时启用torch profiler，包含100轮warmup + 1000轮active记录
-        if counter == 10000:
+        if counter == 20000:
             profiler = torch.profiler.profile(
                 activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
                 schedule=torch.profiler.schedule(wait=0, warmup=100, active=1000),
@@ -93,12 +91,21 @@ if __name__ == "__main__":
             profiler.start()
             print(f"Rank {rank}: Started profiler at counter {counter}, will warmup 100 steps then record 1000 steps with gzip compression")
         
-        if counter >= 10000 and counter <= 11099:
+        if counter >= 20000 and counter <= 21099:
             profiler.step()
         
-        if counter == 11099:
+        if counter == 21099:
             # profiler会在active阶段结束时自动停止并保存，无需手动stop()
             print(f"Rank {rank}: Profiler completed at counter {counter}, recorded 100 warmup + 1000 active steps")
             profiler = None
         
-        execute()
+        with torch.cuda.stream(s):
+            batches = ps.get_batch()
+            if len(batches) != 0:
+                recv_tensor_list = [batches[i][1][0] for i in range(1)]
+                comm_id_list = [batches[i][0] for i in range(1)]
+                # comm.all_gather(allgather_input_buffer)
+                torch.cuda._sleep(int(cycle_per_ms * 0.26))
+                ps.respond_vec(ret_buffer, recv_tensor_list, comm_id_list)
+                # if counter % (1830*5) == 0:
+                #     connector.print_trace()

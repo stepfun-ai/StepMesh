@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "ps/hash_table8.hpp"
 #include "ps/internal/message.h"
 #include "ps/internal/threadsafe_queue.h"
 namespace ps {
@@ -28,11 +29,13 @@ namespace ps {
 class Postoffice;
 
 struct CustomerTracker {
-  std::atomic<int> count;
+  int count;
   std::atomic<int> response_count;
+  int response_count_cache;
   struct Trace request;
   struct Trace response;
   uint64_t start_time;
+  bool done = false;
 };
 
 class Customer {

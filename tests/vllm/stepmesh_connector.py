@@ -17,6 +17,8 @@ from vllm.distributed.afd_transfer.afd_connector.base import AFDConnectorBase
 from vllm.distributed.afd_transfer.afd_connector.metadata import AFDConnectorMetadata
 import numpy as np
 
+import time
+
 if TYPE_CHECKING:
     from vllm.config import VllmConfig
 
@@ -59,6 +61,9 @@ class StepMeshAFDConnector(AFDConnectorBase):
         # Metadata tracking for new interface
         self._current_comm_handles = None
         self._current_metadata = None
+
+        self.signal = ps.SimpleNotify()
+        self.signal.init()
 
         if DEBUG:
             self.stepmesh_costs = []
@@ -217,7 +222,7 @@ class StepMeshAFDConnector(AFDConnectorBase):
 
         send_buff[0].copy_(hidden_states[:seq_len])
         send_key = [stage_id + node_rank_offset]
-        torch.cuda.set_stream(torch.cuda.current_stream())
+        
         event = ps.push_pull(
             send_buff,
             send_key,
@@ -309,7 +314,6 @@ class StepMeshAFDConnector(AFDConnectorBase):
                 split_outputs = [ffn_output]
 
             comm_handles = self._current_comm_handles
-            torch.cuda.set_stream(torch.cuda.current_stream())
             ps.respond_vec(self.ret_buffer, split_outputs, comm_handles)
 
         except Exception as e:
@@ -336,24 +340,26 @@ class StepMeshAFDConnector(AFDConnectorBase):
                 event, metadata = self.events.popleft()
                 if DEBUG:
                     handlers = ps.get_all_handlers(event)
+                    wait_start = time.perf_counter()
                 ps.wait(event,timeout_ms=50000)
+
+                # self.SimpleNotify.stream_wait_event(event)
                 if DEBUG:
+                    self.wait_costs.append(time.perf_counter() - wait_start)
                     self.recv_counter += 1
                     costs = [ps.fetch_trace(h) for h in handlers]
                     self.stepmesh_costs.append(costs)
-                    if self.recv_counter % 1000 == 999:
-                        print(self.check_trace(self.stepmesh_costs, self.local_rank), flush=True)
-                        self.stepmesh_costs = []
+
             # Get result from recv_buffer
-            if metadata:
-                stage_idx = metadata.stage_idx
-                seq_len = metadata.seq_lens[0]  # Single sequence for attention side
-                if len(self.recv_buffer[stage_idx]) == 1:
-                    return self.recv_buffer[stage_idx][0][:seq_len]
-                else:
-                    return torch.stack([t[:seq_len] for t in self.recv_buffer[stage_idx]], dim=0).sum(dim=0)
-            else:
-                raise ValueError("No metadata found for handle")
+            # if metadata:
+            #     stage_idx = metadata.stage_idx
+            #     seq_len = metadata.seq_lens[0]  # Single sequence for attention side
+            #     if len(self.recv_buffer[stage_idx]) == 1:
+            #         return self.recv_buffer[stage_idx][0][:seq_len]
+            #     else:
+            #         return torch.stack([t[:seq_len] for t in self.recv_buffer[stage_idx]], dim=0).sum(dim=0)
+            # else:
+            #     raise ValueError("No metadata found for handle")
 
         except Exception as e:
             logger.error(f"Failed to wait for FFN output: {e}")
@@ -384,6 +390,14 @@ class StepMeshAFDConnector(AFDConnectorBase):
             except Exception as e:
                 logger.error(f"Failed to terminate scheduler subprocess: {e}")
 
+    def print_trace(self):
+        if DEBUG:
+            if len(self.stepmesh_costs) == 0:
+                return               
+            print(f"Rank {self.local_rank}, wait cost: mean {np.mean(self.wait_costs)*1e6:.2f} us, p99 {np.percentile(self.wait_costs, 99)*1e6:.2f} us")
+            print(self.check_trace(self.stepmesh_costs, self.local_rank))
+            self.stepmesh_costs = []
+            self.wait_cost = []
 
     @staticmethod
     def check_trace(trace_list, gpu_id)->str:
@@ -402,17 +416,17 @@ class StepMeshAFDConnector(AFDConnectorBase):
                 req_send_costs.append((cost_list[1] - cost_list[0]) / 1e3)
                 req_recv_costs.append((cost_list[3] - cost_list[2]) / 1e3)
 
-                process_costs.append((cost_list[4] - cost_list[3]) / 1e3)
+                process_costs.append((cost_list[5] - cost_list[3]) / 1e3)
                 rsp_send_costs.append((cost_list[5] - cost_list[4]) / 1e3)
                 rsp_recv_costs.append((cost_list[7] - cost_list[6]) / 1e3)
                 net_costs.append((cost_list[6] - cost_list[1] - (cost_list[5] - cost_list[2])) / 1e3)
             
             result += (f"\n us gpu: {gpu_id}- {index}"
-                    f"\treq_send: mean {np.mean(req_send_costs):.4f} us, p99 {np.percentile(req_send_costs, 99):.4f} us "
-                    f"\treq_recv: mean {np.mean(req_recv_costs):.4f} us, p99 {np.percentile(req_recv_costs, 99):.4f} us "
-                    f"\tprocess: mean {np.mean(process_costs):.4f} us, p99 {np.percentile(process_costs, 99):.4f} us \n\t"
-                    f"\trsp_send: mean {np.mean(rsp_send_costs):.4f} us, p99 {np.percentile(rsp_send_costs, 99):.4f} us "
-                    f"\trsp_recv: mean {np.mean(rsp_recv_costs):.4f} us, p99 {np.percentile(rsp_recv_costs, 99):.4f} us "
-                    f"\tnet: mean {np.mean(net_costs):.4f} us, p99 {np.percentile(net_costs, 99):.4f} us \n"
+                    f"\treq_send: mean {np.mean(req_send_costs):.2f} us, p99 {np.percentile(req_send_costs, 99):.2f} us "
+                    f"\treq_recv: mean {np.mean(req_recv_costs):.2f} us, p99 {np.percentile(req_recv_costs, 99):.2f} us "
+                    f"\tprocess: mean {np.mean(process_costs):.2f} us, p99 {np.percentile(process_costs, 99):.2f} , p50 {np.percentile(process_costs, 50):.2f} us \n\t"
+                    f"\trsp_send: mean {np.mean(rsp_send_costs):.2f} us, p99 {np.percentile(rsp_send_costs, 99):.2f} us "
+                    f"\trsp_recv: mean {np.mean(rsp_recv_costs):.2f} us, p99 {np.percentile(rsp_recv_costs, 99):.2f} us "
+                    f"\tnet: mean {np.mean(net_costs):.2f} us, p99 {np.percentile(net_costs, 99):.2f} us \n"
                     )
         return result
