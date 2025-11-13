@@ -1,6 +1,6 @@
 /* Copyright (c) 2025, StepFun Authors. All rights reserved. */
 
-#include "./util.h"
+#include "./util.hpp"
 #include "./public.hpp"
 #include <future>
 #ifdef DMLC_USE_CUDA

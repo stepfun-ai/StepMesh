@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 def get_version():
-    version = '0.0.4.post1'
+    version = '0.0.5.post1'
     # with open('stepkv/version.py', 'r') as fd:
     #     version = re.search(r'^__version__\s*=\s*[\'"]([^\'"]*)[\'"]',
     #                         fd.read(), re.MULTILINE).group(1)
@@ -62,16 +62,11 @@ if __name__ == "__main__":
     if use_cuda:
         extra_link += ['-lcuda', '-lcudart']
         extra_compile_args['cxx'] += ['-DDMLC_USE_CUDA',]
-        extra_compile_args['nvcc'] = ['-O3', '-gencode', 'arch=compute_70,code=sm_70', 
-                '--use_fast_math'] + cc_flag
+        extra_compile_args['nvcc'] = ['-O3', '-gencode', 'arch=compute_90,code=sm_90', '-gencode', 'arch=compute_80,code=sm_80', '-gencode', 'arch=compute_89,code=sm_89','-gencode', 'arch=compute_90a,code=sm_90a',  
+                '--use_fast_math', f'-D_GLIBCXX_USE_CXX11_ABI={str(int(torch_cxx11_abi))}'] + cc_flag
         bare_metal_major, bare_metal_minor = \
             _get_cuda_bare_metal_version(cpp_extension.CUDA_HOME)
-        if int(bare_metal_major) >= 11:
-            cc_flag.append('-gencode')
-            cc_flag.append('arch=compute_80,code=sm_80')
-            if int(bare_metal_minor) >= 8 or int(bare_metal_major) >= 12:
-                cc_flag.append('-gencode')
-                cc_flag.append('arch=compute_90,code=sm_90')
+
     setup(
         name='FServer',
         description='A Remote FFN Server Implementation for AF Disaggregation',
@@ -84,6 +79,7 @@ if __name__ == "__main__":
                 'fserver_lib',
                 [
                     __SRC_PATH__ + 'ops.cc',
+                    __SRC_PATH__ + 'wait_kernel.cu',
                 ],
                 extra_compile_args=extra_compile_args,
                 extra_link_args=extra_link,

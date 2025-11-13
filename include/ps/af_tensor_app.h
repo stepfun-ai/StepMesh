@@ -93,8 +93,8 @@ class AFTensorWorker {
    *    where the pulled tensors and their associated keys will be stored.
    * @return An integer indicating the result of the operation.
    */
-  int ZBatchPushPull(KeyTensorBatch& push_tensors,
-                     KeyTensorBatch& pull_tensors) {
+  int ZBatchPushPull(KeyTensorBatch& push_tensors, KeyTensorBatch& pull_tensors,
+                     bool need_event = true) {
     Backend::Get()->SetDevice(gpu_);
     auto server_ranges =
         Postoffice::GetWorker(instance_id_)->GetServerKeyRanges();
@@ -130,8 +130,11 @@ class AFTensorWorker {
 
     req.push = push_tensors;
     req.pull = pull_tensors;
-    req.event = GetEvent();
-    req.event->Record();
+    req.event = nullptr;
+    if (need_event) {
+      req.event = GetEvent();
+      req.event->Record();
+    }
 
     PS_VLOG(3) << "ts" << start_ts << " pushpull_queue_ push "
                << pushpull_queue_.Size();
