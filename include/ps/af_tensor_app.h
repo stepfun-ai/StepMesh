@@ -20,7 +20,7 @@
 
 #include "ps/base.h"
 #include "ps/hash_table8.hpp"
-#include "ps/internal/backend.h"
+#include "ps/backend.h"
 #include "ps/internal/utils.h"
 #include "ps/kv_app.h"
 
@@ -236,7 +236,8 @@ class AFTensorWorker {
   void ZPush_(int ts, const SArray<Key>& keys, const at::Tensor& tensor,
               int cmd = 0) {
     SArray<char> val;
-    val.reset(reinterpret_cast<char*>(tensor.data_ptr()),
+    void* mappedPtr = Backend::Get()->GetAccessibleAddr(tensor);
+    val.reset(reinterpret_cast<char*>(mappedPtr),
               tensor.numel() * tensor.itemsize(), [tensor](void*) {});
 
     Message msg;
@@ -244,7 +245,7 @@ class AFTensorWorker {
     msg.meta.head = cmd;
     msg.meta.push = true;
     msg.meta.timestamp = ts;
-    msg.meta.addr = reinterpret_cast<uint64_t>(tensor.data_ptr());
+    msg.meta.addr = reinterpret_cast<uint64_t>(mappedPtr);
     msg.meta.val_len = tensor.numel() * tensor.itemsize();
     PS_VLOG(2) << "ZPush_ addr: 0x" << std::hex << msg.meta.addr << std::dec
                << " val_len: " << msg.meta.val_len;
@@ -284,13 +285,14 @@ class AFTensorWorker {
 
       *key.data() = pull_tensors[i * pull_batch_size + index].key;
 
-      val.reset(reinterpret_cast<char*>(tensor.data_ptr()),
+      void* mappedPtr = Backend::Get()->GetAccessibleAddr(tensor);
+      val.reset(reinterpret_cast<char*>(mappedPtr),
                 tensor.numel() * tensor.itemsize(), [tensor](void*) {});
 
       msg.meta.request = true;
       msg.meta.head = cmd;
       msg.meta.push = false;
-      msg.meta.addr = reinterpret_cast<uint64_t>(tensor.data_ptr());
+      msg.meta.addr = reinterpret_cast<uint64_t>(mappedPtr);
       msg.meta.val_len = tensor.numel() * tensor.itemsize();
       msg.meta.key = key[0];
       msg.meta.is_tensor = 1;
@@ -483,7 +485,8 @@ class AFTensorServer {
         res.keys = key;
 
         SArray<char> tensor_val;
-        tensor_val.reset(reinterpret_cast<char*>(tensors[0].val.data_ptr()),
+        tensor_val.reset(reinterpret_cast<char*>(
+                             Backend::Get()->GetAccessibleAddr(tensors[0].val)),
                          tensors[0].val.numel() * tensors[0].val.itemsize(),
                          [](void*) {});
         res.vals = tensor_val;
@@ -506,7 +509,8 @@ class AFTensorServer {
             rsp.kv_pair.keys = key;
 
             rsp.kv_pair.vals.reset(
-                reinterpret_cast<char*>(res_kv.val.data_ptr()),
+                reinterpret_cast<char*>(
+                    Backend::Get()->GetAccessibleAddr(res_kv.val)),
                 res_kv.val.numel() * res_kv.val.itemsize(), [](void*) {});
 
             rsp.kv_meta = kv_meta;
@@ -558,7 +562,8 @@ class AFTensorServer {
     PS_CHECK_GT(worker_ranks.size(), 0) << "ranks or keys should not be empty";
     PS_CHECK_EQ(worker_ranks.size(), keys.size())
         << "rank list and key list have unequal size";
-    char* buffer_ptr = reinterpret_cast<char*>(tensor.data_ptr());
+    char* buffer_ptr =
+        reinterpret_cast<char*>(Backend::Get()->GetAccessibleAddr(tensor));
     uint64_t data_size = tensor.numel() * tensor.element_size();
     int chunk_size = data_size / worker_ranks.size();
     PS_CHECK_EQ(data_size % worker_ranks.size(), 0)
@@ -591,8 +596,14 @@ class AFTensorServer {
                          .dtype(at::ScalarType(req_meta.dtype))
                          .memory_format(at::MemoryFormat::Contiguous)
                          .device(Backend::Get()->GetDevice());
-      key_tensor.val =
-          at::from_blob(req_data.vals.data(), req_meta.shape, options);
+      key_tensor.val = at::from_blob(
+          Backend::Get()->GetDeviceAddrFromHostPtr(
+              req_data.vals.data(),
+              std::accumulate(std::begin(req_meta.shape),
+                              std::end(req_meta.shape),
+                              c10::elementSize(at::ScalarType(req_meta.dtype)),
+                              std::multiplies<uint64_t>())),
+          req_meta.shape, options);
     }
     key_tensor.key = req_data.keys[0];
     return key_tensor;

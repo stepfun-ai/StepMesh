@@ -19,7 +19,7 @@
 #include <thread>
 
 #include "dmlc/logging.h"
-#include "ps/internal/env.h"
+#include "ps/env.h"
 
 namespace ps {
 

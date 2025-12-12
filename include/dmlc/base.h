@@ -190,4 +190,6 @@ inline const char *BeginPtr(const std::string &str) {
 #define alignof __alignof
 #endif
 
+#define STEPMESH_API __attribute__((__visibility__("default")))
+
 #endif  // DMLC_BASE_H_

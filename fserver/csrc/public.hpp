@@ -1,4 +1,7 @@
 /* Copyright (c) 2025, StepFun Authors. All rights reserved. */
+
+#include <dlfcn.h>
+
 #include <execinfo.h>
 #include <stdio.h>
 #include <signal.h>
@@ -43,6 +46,7 @@ uint64_t handler_counter_ = 0;
 std::unordered_map<uint64_t, AFTensorMeta> meta_map_;
 std::vector<std::deque<ServerDataBatch>> q_;
 std::atomic<uint64_t> q_signal_;
+static void* gPluginHandle = nullptr;
 
 void RequestHandler(const AFTensorMeta& req_meta, AFTensorServer* server) {
   std::vector<torch::Tensor> tensors;
@@ -164,7 +168,12 @@ void barrier(bool include_server, bool include_worker, bool instrance_barrier=tr
 }
 
 
-void init() {
+void init(const std::string& plugin) {
+  if (!plugin.empty()) {
+    gPluginHandle = dlopen(plugin.c_str(), RTLD_NOW);
+    PS_CHECK(gPluginHandle)
+        << "can't load plugin:" << plugin << ": " << dlerror();
+  }
 
   std::string role_str = ps::GetEnv("DMLC_ROLE", "server");
   int offset = 0;
@@ -203,14 +212,17 @@ void stop() {
     ps::Postoffice::GetWorker(gpu_)->DoBarrier(0,
         ps::kWorkerGroup + ps::kServerGroup + ps::kScheduler, true);
   } else if (role_ == Node::SERVER) {
-    ps::Postoffice::GetServer(gpu_)->DoBarrier(0,
-        ps::kWorkerGroup + ps::kServerGroup + ps::kScheduler, true);
+    ps::Postoffice::GetServer(gpu_)->DoBarrier(
+        0, ps::kWorkerGroup + ps::kServerGroup + ps::kScheduler, true);
   } else {
-    ps::Postoffice::Get()->DoBarrier(0,
-        ps::kWorkerGroup + ps::kServerGroup + ps::kScheduler, true);
+    ps::Postoffice::Get()->DoBarrier(
+        0, ps::kWorkerGroup + ps::kServerGroup + ps::kScheduler, true);
   }
 
   ps::Finalize(0, role_, true);
+  if (gPluginHandle) {
+    dlclose(gPluginHandle);
+  }
 }
 
 std::vector<int> get_all_handlers(int handler) {
@@ -237,7 +249,8 @@ uint64_t get_nanosecond() {
 
 
 void pybind_public(py::module &m){
-  m.def("init", &init, py::call_guard<py::gil_scoped_release>());
+  m.def("init", &init, py::arg("plugin") = "",
+        py::call_guard<py::gil_scoped_release>());
   m.def("stop", &stop, py::call_guard<py::gil_scoped_release>());
 
   m.def("register_recv_buffer",

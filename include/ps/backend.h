@@ -15,9 +15,11 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <functional>
 
 #include "dmlc/logging.h"
-#include "ps/internal/env.h"
+#include "ps/env.h"
+#include "base.h"
 
 namespace ps {
 
@@ -26,7 +28,7 @@ enum { BACKEND_OK = 0, BACKEND_FAILED = -1 };
 /**
  * \brief Abstract Backend Class
  */
-class Backend {
+class STEPMESH_API Backend {
  public:
   /**
    * \brief Set device index for current thread
@@ -89,6 +91,24 @@ class Backend {
   virtual int SyncEvent(void* event) = 0;
 
   /**
+   *\brief Get an address that is directly readable via the PCIe bus
+   * @param devicePtr device physical address
+   * @return an address that is directly readable via the PCIe bus
+   */
+  virtual void* GetAccessibleAddr(void* devicePtr, size_t size) {
+    return devicePtr;
+  }
+
+  virtual void* GetAccessibleAddr(const at::Tensor& tensor) {
+    return GetAccessibleAddr(tensor.data_ptr(),
+                             tensor.numel() * tensor.element_size());
+  }
+
+  virtual void* GetDeviceAddrFromHostPtr(void* hostPtr, size_t size) {
+    return hostPtr;
+  }
+
+  /**
    * \brief Get the backend implementation
    * @return the backend implementation
    */
@@ -98,12 +118,15 @@ class Backend {
     RegisterImpl(name, backend);
   }
 
+  static void RegisterLazy(const std::string& name,
+                           const std::function<Backend*(void)>& ctor);
  protected:
   Backend() = default;
 
  private:
   static std::mutex backends_mutex_;
   static std::unordered_map<std::string, Backend*> backends_;
+  static std::unordered_map<std::string, std::function<Backend*(void)>> backend_ctors_;
 
   static Backend* GetImpl() {
     static Backend* backend_impl = nullptr;
@@ -113,9 +136,13 @@ class Backend {
         return backend_impl;
       }
       std::string backend_type = "GPU";
-      backend_type = Environment::Get()->find("STEPMESH_BAKCEND", backend_type);
-      PS_CHECK_NE(backends_.find(backend_type), backends_.end())
-          << "failed to get backend impl: " << backend_type;
+      backend_type = Environment::Get()->find("STEPMESH_BACKEND", backend_type);
+      if (backends_.find(backend_type) == backends_.end()) {
+        PS_CHECK_NE(backend_ctors_.find(backend_type), backend_ctors_.end())
+            << "failed to get backend impl: " << backend_type;
+        backends_[backend_type] = backend_ctors_[backend_type]();
+      }
+
       backend_impl = backends_[backend_type];
     }
     return backend_impl;

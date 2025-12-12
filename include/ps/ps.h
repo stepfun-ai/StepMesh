@@ -18,7 +18,7 @@
 #include "ps/kv_app.h"
 /** \brief tensor-based communication with a list of attention and ffn nodes. */
 #include "ps/af_tensor_app.h"
-#include "ps/internal/backend.h"
+#include "ps/backend.h"
 #include "ps/internal/cpu_backend.h"
 #include "ps/internal/gpu_backend.h"
 

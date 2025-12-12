@@ -19,6 +19,7 @@
 
 #ifdef DMLC_USE_RDMA
 
+#include <errno.h>
 #include <cstdio>
 #include <memory>
 #include <string>
@@ -63,7 +64,8 @@ class RDMAVan : public Van {
     }
     if (event_channel_ == nullptr) {
       event_channel_ = rdma_create_event_channel();
-      PS_CHECK(event_channel_) << "Create RDMA event channel failed";
+      PS_CHECK(event_channel_)
+          << "Create RDMA event channel failed:" << strerror(errno);
 
       cm_event_polling_thread_.reset(
           new std::thread(&RDMAVan::PollEvents, this));
@@ -682,7 +684,9 @@ class RDMAVan : public Van {
                              IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
         if (temp_mr == nullptr) {
           LOG(WARNING) << "Failed to register the memory region: "
-                       << strerror(errno) << ", sa.size()=" << sa.size();
+                       << strerror(errno)
+                       << ", sa.data()=" << reinterpret_cast<void *>(sa.data())
+                       << ", sa.size()=" << sa.size();
           PS_CHECK(0);
         }
 

@@ -12,7 +12,7 @@
 
 #include "dmlc/logging.h"
 #include "ps/base.h"
-#include "ps/internal/env.h"
+#include "ps/env.h"
 #include "ps/internal/spsc_queue.h"
 
 namespace ps {
