@@ -155,7 +155,7 @@ class Postoffice {
 
   /**
    * \brief convert a server group's rank into a instance id with the
-   * provded instance offset from that group
+   * provided instance offset from that group
    * \param rank the server group rank
    * \param instance_idx the offset of the instance in the group
    */
