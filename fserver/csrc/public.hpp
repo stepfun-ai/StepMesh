@@ -180,7 +180,7 @@ void init() {
   
   worker_mask_ = (1 << num_worker_) - 1;
   q_.resize(num_worker_);
-  q_signal_.store(0);;
+  q_signal_.store(0);
   ps::StartPS(0, role_,  group_size_ * node_rank_ + gpu_ + offset, true);
   if (role_ == Node::WORKER) {
     fworker_ = new AFTensorWorker(instance_id_ );

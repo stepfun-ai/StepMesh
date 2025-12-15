@@ -27,22 +27,22 @@ template <typename T>
 inline void AssignFunc(const T& lhs, AssignOp op, T* rhs) {
   switch (op) {
     case ASSIGN:
-      *right = left;
+      *rhs = lhs;
       break;
     case PLUS:
-      *right += left;
+      *rhs += lhs;
       break;
     case MINUS:
-      *right -= left;
+      *rhs -= lhs;
       break;
     case TIMES:
-      *right *= left;
+      *rhs *= lhs;
       break;
     case DIVIDE:
-      *right /= left;
+      *rhs /= lhs;
       break;
     default:
-      LOG(FATAL) << "use AssignOpInt..";
+      PS_LOG(FATAL) << "use AssignOpInt..";
   }
 }
 
@@ -54,28 +54,28 @@ template <typename T>
 inline void AssignFuncInt(const T& lhs, AssignOp op, T* rhs) {
   switch (op) {
     case ASSIGN:
-      *right = left;
+      *rhs = lhs;
       break;
     case PLUS:
-      *right += left;
+      *rhs += lhs;
       break;
     case MINUS:
-      *right -= left;
+      *rhs -= lhs;
       break;
     case TIMES:
-      *right *= left;
+      *rhs *= lhs;
       break;
     case DIVIDE:
-      *right /= left;
+      *rhs /= lhs;
       break;
     case AND:
-      *right &= left;
+      *rhs &= lhs;
       break;
     case OR:
-      *right |= left;
+      *rhs |= lhs;
       break;
     case XOR:
-      *right ^= left;
+      *rhs ^= lhs;
       break;
   }
 }
