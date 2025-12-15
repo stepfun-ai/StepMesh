@@ -109,6 +109,9 @@ class Backend {
     static Backend* backend_impl = nullptr;
     if (backend_impl == nullptr) {
       std::unique_lock<std::mutex> lock(backends_mutex_);
+      if (backend_impl) {
+        return backend_impl;
+      }
       std::string backend_type = "GPU";
       backend_type = Environment::Get()->find("STEPMESH_BAKCEND", backend_type);
       PS_CHECK_NE(backends_.find(backend_type), backends_.end())

@@ -55,12 +55,11 @@ void RequestHandler(const AFTensorMeta& req_meta, AFTensorServer* server) {
     std::lock_guard<std::mutex> lock(mu_);
     meta_map_[handler_counter_] = req_meta;
 
-    q_[req_meta.sender_rank].emplace_back(handler_counter_,
-                                          std::move(tensors),
+    q_[req_meta.sender_rank].emplace_back(handler_counter_, std::move(tensors),
                                           keys);
     q_signal_.fetch_or(1 << req_meta.sender_rank);
+    ++handler_counter_;
   }
-  ++handler_counter_;
 }
 
 std::vector<ServerDataBatch> get_batch() {
