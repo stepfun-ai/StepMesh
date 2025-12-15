@@ -55,12 +55,11 @@ void RequestHandler(const AFTensorMeta& req_meta, AFTensorServer* server) {
     std::lock_guard<std::mutex> lock(mu_);
     meta_map_[handler_counter_] = req_meta;
 
-    q_[req_meta.sender_rank].emplace_back(handler_counter_,
-                                          std::move(tensors),
+    q_[req_meta.sender_rank].emplace_back(handler_counter_, std::move(tensors),
                                           keys);
     q_signal_.fetch_or(1 << req_meta.sender_rank);
+    ++handler_counter_;
   }
-  ++handler_counter_;
 }
 
 std::vector<ServerDataBatch> get_batch() {
@@ -183,10 +182,10 @@ void init() {
   q_signal_.store(0);
   ps::StartPS(0, role_,  group_size_ * node_rank_ + gpu_ + offset, true);
   if (role_ == Node::WORKER) {
-    fworker_ = new AFTensorWorker(instance_id_ );
+    fworker_ = new AFTensorWorker(instance_id_);
     barrier(true, true);
   } else if (role_ == Node::SERVER) {
-    fserver_ = new AFTensorServer(instance_id_ );
+    fserver_ = new AFTensorServer(instance_id_);
     fserver_->SetRequestHandle(RequestHandler);
     ps::RegisterExitCallback([]() { delete fserver_; });
     barrier(true, true);
