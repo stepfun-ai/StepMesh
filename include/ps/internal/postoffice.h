@@ -11,8 +11,8 @@
 #include <unordered_map>
 #include <vector>
 
-#include "ps/internal/customer.h"
 #include "ps/env.h"
+#include "ps/internal/customer.h"
 #include "ps/internal/van.h"
 #include "ps/range.h"
 

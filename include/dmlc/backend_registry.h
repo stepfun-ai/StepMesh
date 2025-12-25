@@ -19,7 +19,8 @@ namespace dmlc {
 //
 // Contract Requirements:
 //   * Each backend must define a unique type identifier.
-//   * Backends must satisfy the BackendInterface contract (init, push/pull, etc).
+//   * Backends must satisfy the BackendInterface contract (init, push/pull,
+//   etc).
 //   * Registration should occur during StepMesh startup or module load.
 //
 // Backend registry responsibilities:

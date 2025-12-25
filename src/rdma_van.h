@@ -20,6 +20,7 @@
 #ifdef DMLC_USE_RDMA
 
 #include <errno.h>
+
 #include <cstdio>
 #include <memory>
 #include <string>
@@ -36,7 +37,7 @@ namespace ps {
 
 class RDMAVan : public Van {
  public:
-  explicit RDMAVan(Postoffice *postoffice)
+  explicit RDMAVan(Postoffice* postoffice)
       : Van(postoffice), postoffice_(postoffice) {
     PS_CHECK_EQ(ibv_fork_init(), 0) << strerror(errno);
   }
@@ -44,7 +45,7 @@ class RDMAVan : public Van {
 
   virtual std::string GetType() const { return std::string("rdma"); }
 
-  Postoffice *postoffice_;
+  Postoffice* postoffice_;
 
  protected:
   void Start(int customer_id, bool standalone) override {
@@ -129,7 +130,7 @@ class RDMAVan : public Van {
 
     PS_CHECK(!ibv_destroy_cq(cq_)) << "Failed to destroy CQ";
 
-    for (auto &it : mem_mr_) ibv_dereg_mr(it.second);
+    for (auto& it : mem_mr_) ibv_dereg_mr(it.second);
 
     // TODO(non): ibv_dealloc_pd sometimes complains resource busy, need to fix
     // PS_CHECK(!ibv_dealloc_pd(pd_)) << "Failed to deallocate PD: " <<
@@ -140,7 +141,7 @@ class RDMAVan : public Van {
     rdma_destroy_event_channel(event_channel_);
   }
 
-  int Bind(Node &node, int max_retry) override {
+  int Bind(Node& node, int max_retry) override {
     PS_CHECK_EQ(my_node_.num_ports, 1)
         << "RDMA van does not support multiple ports";
     PS_CHECK(rdma_create_id(event_channel_, &listener_, nullptr, RDMA_PS_TCP) ==
@@ -162,7 +163,7 @@ class RDMAVan : public Van {
     for (int i = 0; i < max_retry + 1; ++i) {
       addr.sin_port = htons(port);
       if (rdma_bind_addr(listener_,
-                         reinterpret_cast<struct sockaddr *>(&addr)) == 0) {
+                         reinterpret_cast<struct sockaddr*>(&addr)) == 0) {
         break;
       }
       if (i == max_retry) {
@@ -176,7 +177,7 @@ class RDMAVan : public Van {
     return port;
   }
 
-  void Connect(const Node &node) override {
+  void Connect(const Node& node) override {
     PS_VLOG(1) << "Connecting to Node " << node.id
                << ", My_Node=" << my_node_.id;
     PS_CHECK_NE(node.id, node.kEmpty);
@@ -197,20 +198,20 @@ class RDMAVan : public Van {
         endpoints_.erase(it);
       }
 
-      Endpoint *endpoint;
+      Endpoint* endpoint;
       endpoints_[node.id] = std::make_unique<Endpoint>();
       endpoint = endpoints_[node.id].get();
       endpoints_mu_.unlock();
 
       endpoint->SetNodeID(node.id);
 
-      struct addrinfo *remote_addr;
+      struct addrinfo* remote_addr;
       PS_CHECK_EQ(
           getaddrinfo(node.hostname.c_str(), std::to_string(node.port).c_str(),
                       nullptr, &remote_addr),
           0);
 
-      struct addrinfo *addr = nullptr;
+      struct addrinfo* addr = nullptr;
       auto val = Environment::Get()->find("DMLC_NODE_HOST");
       if (val) {
         auto rc = getaddrinfo(val, "", NULL, &addr);
@@ -276,7 +277,7 @@ class RDMAVan : public Van {
     }
   }
 
-  void RegisterRecvBuffer(Message &msg) override {
+  void RegisterRecvBuffer(Message& msg) override {
     RegisterMemory(msg);
     std::unique_lock<std::mutex> lock(registered_recv_buffers_mu_);
     uint64_t key = DecodeKey(msg.data[0]);
@@ -287,12 +288,12 @@ class RDMAVan : public Van {
               << ", size=" << msg.data[1].size();
   }
 
-  void QueryRecvBuffer(uint64_t key, int node_id, void **buffer, size_t *size,
-                       uint32_t *rkey) override {
+  void QueryRecvBuffer(uint64_t key, int node_id, void** buffer, size_t* size,
+                       uint32_t* rkey) override {
     std::unique_lock<std::mutex> lock(registered_recv_buffers_mu_);
     auto itr = registered_recv_buffers_.find(key);
     if (itr != registered_recv_buffers_.end()) {
-      for (auto &t : itr->second) {
+      for (auto& t : itr->second) {
         if (t.first == node_id) {
           *buffer = t.second.data();
           *size = t.second.size();
@@ -308,10 +309,10 @@ class RDMAVan : public Van {
     *size = 0;
   }
 
-  int SendMsg(Message &msg) override {
+  int SendMsg(Message& msg) override {
     int remote_id = msg.meta.recver;
     PS_CHECK_NE(remote_id, Meta::kEmpty);
-    Endpoint *endpoint = nullptr;
+    Endpoint* endpoint = nullptr;
     {
       std::unique_lock<std::mutex> lock(endpoints_mu_);
       auto itr = endpoints_.find(remote_id);
@@ -335,14 +336,14 @@ class RDMAVan : public Van {
 
     // start rendezvous if no remote info
     if (!IsValidPushpull(msg)) {
-      MessageBuffer *msg_buf = PrepareNewMsgBuf(msg);
+      MessageBuffer* msg_buf = PrepareNewMsgBuf(msg);
       StoreMsgBuf(msg_buf, msg);
       trans->SendRendezvousBegin(msg, msg_buf);
       return total_len;
     }
 
     if (!HasRemoteInfo(msg, msg.meta.key, msg.meta.push, remote_id)) {
-      MessageBuffer *msg_buf = PrepareNewMsgBuf(msg);
+      MessageBuffer* msg_buf = PrepareNewMsgBuf(msg);
       StoreMsgBuf(msg_buf, msg);
       PrepareData(msg, msg_buf);
       trans->SendRendezvousBegin(msg, msg_buf);
@@ -352,9 +353,9 @@ class RDMAVan : public Van {
     auto addr_tuple =
         GetRemoteAndLocalInfo(msg.meta.key, msg.meta.push, remote_id);
 #ifdef STEPMESH_USE_GDR
-    MessageBuffer *msg_buf = std::get<5>(addr_tuple);  // local message buffer
+    MessageBuffer* msg_buf = std::get<5>(addr_tuple);  // local message buffer
 #else
-    MessageBuffer *msg_buf = std::get<3>(addr_tuple);  // local message buffer
+    MessageBuffer* msg_buf = std::get<3>(addr_tuple);  // local message buffer
 #endif
     // print detail of msg_buf as one line
 
@@ -407,13 +408,13 @@ class RDMAVan : public Van {
     return total_len;
   }
 
-  int RecvMsg(Message *msg) override {
+  int RecvMsg(Message* msg) override {
     msg->data.clear();
-    std::tuple<Endpoint *, BufferContext *, uint64_t, int> notification;
+    std::tuple<Endpoint*, BufferContext*, uint64_t, int> notification;
     recv_buffers_.WaitAndPop(&notification);
     int cmd = std::get<int>(notification);
-    Endpoint *endpoint = std::get<Endpoint *>(notification);
-    BufferContext *buffer_ctx = std::get<BufferContext *>(notification);
+    Endpoint* endpoint = std::get<Endpoint*>(notification);
+    BufferContext* buffer_ctx = std::get<BufferContext*>(notification);
     auto trans = PS_CHECK_NOTNULL(endpoint->GetTransport());
     msg->meta.recver = my_node_.id;
     msg->meta.sender = endpoint->node_id;
@@ -421,17 +422,17 @@ class RDMAVan : public Van {
     // the second argument is actually deprecated,
     // we keep it as is in order to be compatible
 #ifdef STEPMESH_USE_GDR
-    bool is_server = static_cast<RDMATransport *>(trans.get())->is_server_;
-    char *meta_buf = is_server ? buffer_ctx->meta_buffer : buffer_ctx->buffer;
+    bool is_server = static_cast<RDMATransport*>(trans.get())->is_server_;
+    char* meta_buf = is_server ? buffer_ctx->meta_buffer : buffer_ctx->buffer;
     PS_CHECK(meta_buf);
 #else
-    char *meta_buf = buffer_ctx->buffer;
+    char* meta_buf = buffer_ctx->buffer;
     PS_CHECK(meta_buf);
 #endif
 
     PS_VLOG(3) << "3. 1 RecvMsg: " << msg->DebugString();
 
-    RawMeta *raw = reinterpret_cast<RawMeta *>(meta_buf);
+    RawMeta* raw = reinterpret_cast<RawMeta*>(meta_buf);
 
     auto counters = raw->slave_qp_counter;
     if (raw->slave_qp_num > 0) {
@@ -495,7 +496,7 @@ class RDMAVan : public Van {
   }
 
  private:
-  void PrintSendLog(Message &msg, MessageBuffer *msg_buf,
+  void PrintSendLog(Message& msg, MessageBuffer* msg_buf,
                     RemoteTuple remote_tuple) {
     if (!enable_log_) return;
     std::lock_guard<std::mutex> lock(log_mu_);
@@ -510,7 +511,7 @@ class RDMAVan : public Van {
                     << "\t tensor_len=" << msg_buf->mrs[0].second
                     << "\t remote_idx=" << std::get<2>(remote_tuple)
                     << "\t remote_addr="
-                    << reinterpret_cast<void *>(std::get<0>(remote_tuple))
+                    << reinterpret_cast<void*>(std::get<0>(remote_tuple))
                     << std::flush;
     } else if (msg.meta.push && !msg.meta.request) {
       // server, push response
@@ -519,7 +520,7 @@ class RDMAVan : public Van {
                     << "\t recver=" << msg.meta.recver
                     << "\t remote_idx=" << std::get<2>(remote_tuple)
                     << "\t remote_addr="
-                    << reinterpret_cast<void *>(std::get<0>(remote_tuple))
+                    << reinterpret_cast<void*>(std::get<0>(remote_tuple))
                     << std::flush;
     } else if (!msg.meta.push && msg.meta.request) {
       // worker, pull request
@@ -528,7 +529,7 @@ class RDMAVan : public Van {
                     << "\t recver=" << msg.meta.recver
                     << "\t remote_idx=" << std::get<2>(remote_tuple)
                     << "\t remote_addr="
-                    << reinterpret_cast<void *>(std::get<0>(remote_tuple))
+                    << reinterpret_cast<void*>(std::get<0>(remote_tuple))
                     << std::flush;
     } else if (!msg.meta.push && !msg.meta.request) {
       // server, pull response
@@ -538,12 +539,12 @@ class RDMAVan : public Van {
                     << "\t tensor_len=" << msg.meta.val_len << "\t idx="
                     << "none"
                     << "\t remote_addr="
-                    << reinterpret_cast<void *>(std::get<0>(remote_tuple))
+                    << reinterpret_cast<void*>(std::get<0>(remote_tuple))
                     << std::flush;
     }
   }
 
-  void PrintRecvLog(Message *msg, BufferContext *buffer_ctx, int meta_len) {
+  void PrintRecvLog(Message* msg, BufferContext* buffer_ctx, int meta_len) {
     if (!enable_log_) return;
     std::lock_guard<std::mutex> lock(log_mu_);
 
@@ -574,7 +575,7 @@ class RDMAVan : public Van {
     }
   }
 
-  bool HasRemoteInfo(Message &msg, uint64_t key, bool is_push, int recver) {
+  bool HasRemoteInfo(Message& msg, uint64_t key, bool is_push, int recver) {
     std::lock_guard<std::mutex> lk(addr_mu_);
     if (is_push && (push_addr_.find(key) != push_addr_.end()) &&
         (push_addr_[key].find(recver) != push_addr_[key].end())) {
@@ -588,33 +589,33 @@ class RDMAVan : public Van {
     return false;
   }
 
-  void StoreMsgBuf(MessageBuffer *msg_buf, Message &msg) {
+  void StoreMsgBuf(MessageBuffer* msg_buf, Message& msg) {
     std::lock_guard<std::mutex> lk(addr_mu_);
     PS_CHECK_EQ(msgbuf_cache_.find(msg_buf), msgbuf_cache_.end());
     msgbuf_cache_[msg_buf] = msg;
   }
 
-  Message *GetFirstMsg(MessageBuffer *msg_buf) {
+  Message* GetFirstMsg(MessageBuffer* msg_buf) {
     std::lock_guard<std::mutex> lk(addr_mu_);
     PS_CHECK_NE(msgbuf_cache_.find(msg_buf), msgbuf_cache_.end());
     return &msgbuf_cache_[msg_buf];
   }
 
-  void ReleaseFirstMsg(MessageBuffer *msg_buf) {
+  void ReleaseFirstMsg(MessageBuffer* msg_buf) {
     std::lock_guard<std::mutex> lk(addr_mu_);
     PS_CHECK_NE(msgbuf_cache_.find(msg_buf), msgbuf_cache_.end());
     msgbuf_cache_.erase(msg_buf);
   }
 
 #ifdef STEPMESH_USE_GDR
-  void StoreRemoteAndLocalInfo(MessageBuffer *msg_buf, uint64_t meta_addr,
+  void StoreRemoteAndLocalInfo(MessageBuffer* msg_buf, uint64_t meta_addr,
                                uint32_t meta_rkey, uint64_t data_addr,
                                uint32_t data_rkey, uint32_t idx) {
     std::lock_guard<std::mutex> lk(addr_mu_);
 
     PS_CHECK_NE(msgbuf_cache_.find(msg_buf), msgbuf_cache_.end());
 
-    auto &msg = msgbuf_cache_[msg_buf];
+    auto& msg = msgbuf_cache_[msg_buf];
 
     auto key = msg.meta.key;
     auto is_push = msg.meta.push;
@@ -630,13 +631,13 @@ class RDMAVan : public Van {
   }
 #endif
 
-  void StoreRemoteAndLocalInfo(MessageBuffer *msg_buf, uint64_t remote_addr,
+  void StoreRemoteAndLocalInfo(MessageBuffer* msg_buf, uint64_t remote_addr,
                                uint32_t rkey, uint32_t idx) {
     std::lock_guard<std::mutex> lk(addr_mu_);
 
     PS_CHECK_NE(msgbuf_cache_.find(msg_buf), msgbuf_cache_.end());
 
-    auto &msg = msgbuf_cache_[msg_buf];
+    auto& msg = msgbuf_cache_[msg_buf];
 
     auto key = msg.meta.key;
     auto is_push = msg.meta.push;
@@ -661,8 +662,8 @@ class RDMAVan : public Van {
     return (is_push ? push_addr_[key][recver] : pull_addr_[key][recver]);
   }
 
-  MessageBuffer *PrepareNewMsgBuf(Message &msg) {
-    MessageBuffer *msg_buf = new MessageBuffer();
+  MessageBuffer* PrepareNewMsgBuf(Message& msg) {
+    MessageBuffer* msg_buf = new MessageBuffer();
     auto meta_len = GetPackMetaLen(msg.meta);
     msg_buf->inline_len = meta_len;
     msg_buf->inline_buf = mem_allocator_->Alloc(meta_len);
@@ -671,21 +672,21 @@ class RDMAVan : public Van {
     return msg_buf;
   }
 
-  void RegisterMemory(Message &msg) {
+  void RegisterMemory(Message& msg) {
     size_t sa_cnt = 0;
-    for (auto &sa : msg.data) {
+    for (auto& sa : msg.data) {
       if (sa.size() == 0) continue;
       std::lock_guard<std::mutex> lock(map_mu_);
       if ((mem_mr_.find(sa.data()) == mem_mr_.end() ||
            mem_mr_[sa.data()]->length < sa.size()) &&
           (sa_cnt == 1)) {  // only vals register memory
-        struct ibv_mr *temp_mr;
+        struct ibv_mr* temp_mr;
         temp_mr = ibv_reg_mr(mem_allocator_->GetPD(), sa.data(), sa.size(),
                              IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
         if (temp_mr == nullptr) {
           LOG(WARNING) << "Failed to register the memory region: "
                        << strerror(errno)
-                       << ", sa.data()=" << reinterpret_cast<void *>(sa.data())
+                       << ", sa.data()=" << reinterpret_cast<void*>(sa.data())
                        << ", sa.size()=" << sa.size();
           PS_CHECK(0);
         }
@@ -697,11 +698,11 @@ class RDMAVan : public Van {
     // register for tensor address of pull request
     if (IsValidPushpull(msg) && !msg.meta.push && msg.meta.request) {
       PS_CHECK_GT(msg.meta.val_len, 0) << msg.meta.val_len;
-      auto addr = reinterpret_cast<char *>(msg.meta.addr);
+      auto addr = reinterpret_cast<char*>(msg.meta.addr);
       std::lock_guard<std::mutex> lock(map_mu_);
       if (mem_mr_.find(addr) == mem_mr_.end() ||
           mem_mr_[addr]->length < msg.meta.val_len) {
-        struct ibv_mr *temp_mr;
+        struct ibv_mr* temp_mr;
         temp_mr = ibv_reg_mr(mem_allocator_->GetPD(), addr, msg.meta.val_len,
                              IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
         if (temp_mr == nullptr) {
@@ -714,31 +715,31 @@ class RDMAVan : public Van {
     }
   }
 
-  void PrepareData(Message &msg, MessageBuffer *msg_buf) {
+  void PrepareData(Message& msg, MessageBuffer* msg_buf) {
     if (!(msg.meta.push && msg.meta.request)) return;  // only push request
-    auto &sa = msg_buf->data[1];
+    auto& sa = msg_buf->data[1];
     if (sa.size() == 0) return;
     std::lock_guard<std::mutex> lock(map_mu_);
     auto it = mem_mr_.find(sa.data());
     PS_CHECK_NE(it, mem_mr_.end());
-    MRPtr ptr(it->second, [](struct ibv_mr *mr) {});
+    MRPtr ptr(it->second, [](struct ibv_mr* mr) {});
     PS_CHECK(ptr.get()) << strerror(errno);
     msg_buf->mrs.push_back(std::make_pair(std::move(ptr), sa.size()));
   }
 
-  void AddMeta(Message &msg) {
+  void AddMeta(Message& msg) {
     if (msg.meta.request) {
       msg.meta.key = DecodeKey(msg.data[0]);
     }
     if (!msg.meta.push && msg.meta.request) {
       // pull request
       std::lock_guard<std::mutex> lock(map_mu_);
-      auto val_addr = reinterpret_cast<char *>(msg.meta.addr);
+      auto val_addr = reinterpret_cast<char*>(msg.meta.addr);
       msg.meta.option = mem_mr_[val_addr]->rkey;
     }
   }
 
-  void InitContext(struct ibv_context *context) {
+  void InitContext(struct ibv_context* context) {
     context_ = context;
     PS_CHECK(context_) << "ibv_context* empty";
 
@@ -755,7 +756,7 @@ class RDMAVan : public Van {
     PS_CHECK(cq_) << "Failed to create completion queue";
   }
 
-  void ReleaseWorkRequestContext(WRContext *context, Endpoint *endpoint,
+  void ReleaseWorkRequestContext(WRContext* context, Endpoint* endpoint,
                                  int qpIndex = 0) {
     switch (context->type) {
       case kRendezvousStartContext:
@@ -792,16 +793,15 @@ class RDMAVan : public Van {
             << static_cast<uint64_t>(wc[i].wr_id) << " " << wc[i].vendor_err
             << " " << wc[i].opcode << " "
             << (wc[i].opcode == IBV_WC_RECV ? "RECV" : "OTHER")
-            << " postoffice ptr: " << reinterpret_cast<void *>(postoffice_);
+            << " postoffice ptr: " << reinterpret_cast<void*>(postoffice_);
 
         // IBV_WC_RDMA_WRITE use msg_buf as the wr_id
         // so there won't be context and endpoint for this op
         if (wc[i].opcode == IBV_WC_RDMA_WRITE) {
           continue;
         }
-        WRContext *context = reinterpret_cast<WRContext *>(wc[i].wr_id);
-        Endpoint *endpoint =
-            reinterpret_cast<Endpoint *>(context->private_data);
+        WRContext* context = reinterpret_cast<WRContext*>(wc[i].wr_id);
+        Endpoint* endpoint = reinterpret_cast<Endpoint*>(context->private_data);
 
         // IBV_WC_RDMA_WRITE use msg_buf as the wr_id
         // so there won't be context and endpoint for this op
@@ -821,7 +821,7 @@ class RDMAVan : public Van {
               uint32_t cmd = ((addr_idx & 0xFFFF) >> 16) & 0xFFFF;
 
               endpoint->master_id = endpoint->cm_ids[cmIdInde];
-              BufferContext *buf_ctx = addr_pool_.GetAddress(addr_idx);
+              BufferContext* buf_ctx = addr_pool_.GetAddress(addr_idx);
               recv_buffers_.Push(
                   std::make_tuple(endpoint, buf_ctx, GetNanosecond(), cmd));
             } else {
@@ -833,22 +833,22 @@ class RDMAVan : public Van {
           case IBV_WC_RECV: {
             PS_CHECK(wc[i].wc_flags & IBV_WC_WITH_IMM);
             uint32_t imm = wc[i].imm_data;
-            struct ibv_mr *mr = context->buffer;
+            struct ibv_mr* mr = context->buffer;
 
             if (imm == kRendezvousStart) {
-              RendezvousStart *req =
-                  reinterpret_cast<RendezvousStart *>(mr->addr);
+              RendezvousStart* req =
+                  reinterpret_cast<RendezvousStart*>(mr->addr);
               auto trans = PS_CHECK_NOTNULL(endpoint->GetTransport());
               trans->SendRendezvousReply(req, addr_pool_);
             } else if (imm == kRendezvousReply) {
-              RendezvousReply *resp =
-                  reinterpret_cast<RendezvousReply *>(mr->addr);
+              RendezvousReply* resp =
+                  reinterpret_cast<RendezvousReply*>(mr->addr);
 
               uint64_t origin_addr = resp->origin_addr;
               uint32_t idx = resp->idx;
 
-              MessageBuffer *msg_buf =
-                  reinterpret_cast<MessageBuffer *>(origin_addr);
+              MessageBuffer* msg_buf =
+                  reinterpret_cast<MessageBuffer*>(origin_addr);
               // Before RDMA write, store the remote info so that
               // subsequent write does not need repeated rendezvous
 #ifdef STEPMESH_USE_GDR
@@ -858,7 +858,7 @@ class RDMAVan : public Van {
               StoreRemoteAndLocalInfo(msg_buf, resp->addr, resp->rkey, idx);
 #endif
 
-              Message *msg = GetFirstMsg(msg_buf);
+              Message* msg = GetFirstMsg(msg_buf);
               auto addr_tuple = GetRemoteAndLocalInfo(
                   msg->meta.key, msg->meta.push, msg->meta.recver);
               auto trans = PS_CHECK_NOTNULL(endpoint->GetTransport());
@@ -922,7 +922,7 @@ class RDMAVan : public Van {
         continue;
       }
 
-      struct rdma_cm_event *event;
+      struct rdma_cm_event* event;
       PS_CHECK_EQ(rdma_get_cm_event(event_channel_, &event), 0);
       // TODO(clan): Reorder the list according to the event frequency
       switch (event->event) {
@@ -952,9 +952,9 @@ class RDMAVan : public Van {
     }
   }
 
-  void OnRejected(struct rdma_cm_event *event) {
-    struct rdma_cm_id *id = event->id;
-    Endpoint *endpoint = reinterpret_cast<Endpoint *>(id->context);
+  void OnRejected(struct rdma_cm_event* event) {
+    struct rdma_cm_id* id = event->id;
+    Endpoint* endpoint = reinterpret_cast<Endpoint*>(id->context);
 
     endpoints_mu_.lock();
     auto it = endpoints_.find(endpoint->node_id);
@@ -971,8 +971,8 @@ class RDMAVan : public Van {
   }
 
   // Server Side
-  void OnConnectRequest(struct rdma_cm_event *event) {
-    struct rdma_cm_id *id = event->id;
+  void OnConnectRequest(struct rdma_cm_event* event) {
+    struct rdma_cm_id* id = event->id;
     PS_CHECK_NOTNULL(id);
     PS_CHECK_LE(sizeof(RequestContext), event->param.conn.private_data_len)
         << "RequestContext size mismatch. Actual: "
@@ -980,10 +980,10 @@ class RDMAVan : public Van {
         << ", Expected: " << sizeof(RequestContext);
     PS_CHECK_NOTNULL(event->param.conn.private_data);
 
-    const RequestContext *remote_ctx = reinterpret_cast<const RequestContext *>(
-        event->param.conn.private_data);
+    const RequestContext* remote_ctx =
+        reinterpret_cast<const RequestContext*>(event->param.conn.private_data);
 
-    Endpoint *endpoint = nullptr;
+    Endpoint* endpoint = nullptr;
     std::string rem_host = std::string(remote_ctx->hostname) + "," +
                            std::to_string(remote_ctx->node) + "," +
                            std::to_string(remote_ctx->port);
@@ -1043,16 +1043,16 @@ class RDMAVan : public Van {
   }
 
   // Resolve a route after address is resolved
-  void OnAddrResolved(struct rdma_cm_event *event) {
-    struct rdma_cm_id *id = event->id;
+  void OnAddrResolved(struct rdma_cm_event* event) {
+    struct rdma_cm_id* id = event->id;
     PS_CHECK_EQ(rdma_resolve_route(id, kTimeoutms), 0)
         << "Resolve RDMA route failed";
   }
 
   // Make a connection after route is resolved
-  void OnRouteResolved(struct rdma_cm_event *event) {
-    struct rdma_cm_id *id = event->id;
-    Endpoint *endpoint = reinterpret_cast<Endpoint *>(id->context);
+  void OnRouteResolved(struct rdma_cm_event* event) {
+    struct rdma_cm_id* id = event->id;
+    Endpoint* endpoint = reinterpret_cast<Endpoint*>(id->context);
 
     if (context_ == nullptr) {
       InitContext(id->verbs);
@@ -1076,10 +1076,10 @@ class RDMAVan : public Van {
     if (endpoint->inComingCount == QP_NUM) endpoint->inComingCount = 0;
   }
 
-  void OnConnected(struct rdma_cm_event *event) {
-    struct rdma_cm_id *id = event->id;
+  void OnConnected(struct rdma_cm_event* event) {
+    struct rdma_cm_id* id = event->id;
     PS_CHECK(id) << "rdma_cm_id not found.";
-    Endpoint *endpoint = reinterpret_cast<Endpoint *>(id->context);
+    Endpoint* endpoint = reinterpret_cast<Endpoint*>(id->context);
     PS_CHECK(endpoint) << "Endpoint not found.";
     if (cq_polling_thread_ == nullptr) {
       cq_polling_thread_.reset(new std::thread(&RDMAVan::PollCQ, this));
@@ -1107,9 +1107,9 @@ class RDMAVan : public Van {
     }
   }
 
-  void OnDisconnected(struct rdma_cm_event *event) {
-    struct rdma_cm_id *id = event->id;
-    Endpoint *endpoint = reinterpret_cast<Endpoint *>(id->context);
+  void OnDisconnected(struct rdma_cm_event* event) {
+    struct rdma_cm_id* id = event->id;
+    Endpoint* endpoint = reinterpret_cast<Endpoint*>(id->context);
     {
       std::lock_guard<std::mutex> lk(endpoint->connect_mu);
       // endpoint->status = Endpoint::IDLE;
@@ -1125,26 +1125,26 @@ class RDMAVan : public Van {
   std::unique_ptr<RDMATransport> rdma_trans_;
   std::unique_ptr<IPCTransport> ipc_trans_;
 
-  struct rdma_cm_id *listener_ = nullptr;
+  struct rdma_cm_id* listener_ = nullptr;
   std::atomic<bool> should_stop_;
 
   std::mutex endpoints_mu_;
   std::unordered_map<int, std::unique_ptr<Endpoint>> endpoints_;
   std::unordered_map<std::string, std::unique_ptr<Endpoint>> incoming_;
 
-  struct rdma_event_channel *event_channel_ = nullptr;
-  struct ibv_context *context_ = nullptr;
+  struct rdma_event_channel* event_channel_ = nullptr;
+  struct ibv_context* context_ = nullptr;
 
   // ibverbs protection domain
-  struct ibv_pd *pd_ = nullptr;
+  struct ibv_pd* pd_ = nullptr;
   // Completion queue, to poll on work completions
-  struct ibv_cq *cq_ = nullptr;
+  struct ibv_cq* cq_ = nullptr;
   // cq thread
   std::unique_ptr<std::thread> cq_polling_thread_ = nullptr;
   // event thread
   std::unique_ptr<std::thread> cm_event_polling_thread_ = nullptr;
   // Recv buffer queue
-  ThreadsafeQueue<std::tuple<Endpoint *, BufferContext *, uint64_t, int>>
+  ThreadsafeQueue<std::tuple<Endpoint*, BufferContext*, uint64_t, int>>
       recv_buffers_;
 
   // local IPC related
@@ -1156,10 +1156,10 @@ class RDMAVan : public Van {
   // <key, recver>, (<remote_addr, rkey, idx, local_addr>)
   std::unordered_map<uint64_t, RemoteAndLocalAddress> push_addr_;
   std::unordered_map<uint64_t, RemoteAndLocalAddress> pull_addr_;
-  std::unordered_map<MessageBuffer *, Message> msgbuf_cache_;  // msg_buf, msg
+  std::unordered_map<MessageBuffer*, Message> msgbuf_cache_;  // msg_buf, msg
 
   std::mutex map_mu_;
-  std::unordered_map<char *, struct ibv_mr *>
+  std::unordered_map<char*, struct ibv_mr*>
       mem_mr_;  // (memory address, ibv_mr)
 
   // logging
