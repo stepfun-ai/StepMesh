@@ -15,7 +15,7 @@ std::unordered_map<std::string, std::function<Backend*(void)>>
     Backend::backend_ctors_;
 
 void Backend::RegisterLazy(const std::string& name,
-                  const std::function<Backend*(void)>& ctor) {
+                           const std::function<Backend*(void)>& ctor) {
   Backend::backend_ctors_.emplace(name, ctor);
 }
 

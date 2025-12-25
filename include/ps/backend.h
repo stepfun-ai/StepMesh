@@ -11,15 +11,15 @@
 #endif
 #include <torch/torch.h>
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <utility>
-#include <functional>
 
+#include "base.h"
 #include "dmlc/logging.h"
 #include "ps/env.h"
-#include "base.h"
 
 namespace ps {
 
@@ -120,13 +120,15 @@ class STEPMESH_API Backend {
 
   static void RegisterLazy(const std::string& name,
                            const std::function<Backend*(void)>& ctor);
+
  protected:
   Backend() = default;
 
  private:
   static std::mutex backends_mutex_;
   static std::unordered_map<std::string, Backend*> backends_;
-  static std::unordered_map<std::string, std::function<Backend*(void)>> backend_ctors_;
+  static std::unordered_map<std::string, std::function<Backend*(void)>>
+      backend_ctors_;
 
   static Backend* GetImpl() {
     static Backend* backend_impl = nullptr;
