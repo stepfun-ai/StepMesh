@@ -32,10 +32,6 @@ set(PY_EXT_SUFFIX ".so")
 set(PYTHON_EXTENSION_NAME
     "${MODULE_NAME}.${PY_SOABI}${PY_EXT_SUFFIX}"
 )
-# add_library(fserver SHARED IMPORTED)
-# set_target_properties(fserver PROPERTIES
-#     IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/../../${PYTHON_EXTENSION_NAME}
-# )
 
 find_package(CUDAToolkit REQUIRED)
 target_link_libraries(klx_backend
@@ -45,16 +41,15 @@ target_link_libraries(klx_backend
     ${TORCH_PYTHON_LIBRARY}
 )
 
-target_link_options(klx_backend PRIVATE
-    -Wl,-rpath,${CMAKE_CURRENT_SOURCE_DIR}/../../${PYTHON_EXTENSION_NAME}
-)
-
 install(TARGETS klx_backend
     LIBRARY DESTINATION lib
 )
 
-#set_target_properties(klx_backend PROPERTIES
-#    BUILD_RPATH "${CMAKE_BINARY_DIR}/../"
-#    INSTALL_RPATH "\$ORIGIN"
-#    BUILD_WITH_INSTALL_RPATH TRUE
-#)
+# Note: If you are building your own Python package,
+# please update this path to point to your own relative directory.
+set_target_properties(klx_backend PROPERTIES
+    BUILD_RPATH "${CMAKE_BINARY_DIR}/../"
+    INSTALL_RPATH "\$ORIGIN"
+    BUILD_WITH_INSTALL_RPATH TRUE
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../.."
+)

@@ -6,10 +6,11 @@
 #include <ATen/cuda/CUDAEvent.h>
 #include <sys/mman.h>
 
-#include <unordered_map>
+#include <mutex>
 
 #include "dmlc/backend_registry.h"
 #include "ps/backend.h"
+#include "ps/hash_table8.hpp"
 #include "ps/internal/gpu_backend.h"
 
 #define KLX_RT_CALL(func, ...)                                       \
@@ -18,9 +19,6 @@
     PS_CHECK_EQ(klx_errno, 0)                                        \
         << #func << " failed err:" << cudaGetErrorString(klx_errno); \
   } while (0)
-
-#define USE_MMAP_ALLOC
-#undef USE_MMAP_ALLOC
 
 namespace klx {
 
@@ -61,7 +59,7 @@ class KlxBackend : public Backend {
     static thread_local int gpu_idx = -1;
     if (gpu_idx == -1) {
       PS_CHECK_GE(gpu_idx_, 0)
-          << "cannot set device " << gpu_idx_ << " for gpu backend";
+          << "cannot set device " << gpu_idx_ << " for klx backend";
       SetDevice(gpu_idx_);
       gpu_idx = gpu_idx_;
     }
@@ -71,7 +69,8 @@ class KlxBackend : public Backend {
   int gpu_idx_ = -1;
   int mem_sync_ = 1;
   // host address to device address map
-  std::unordered_map<void*, void*> ha_da_map_;
+  std::mutex mtx_;
+  emhash8::HashMap<void*, void*> ha_da_map_;
 };
 
 KlxBackend::KlxBackend() {
@@ -80,8 +79,10 @@ KlxBackend::KlxBackend() {
 }
 
 int KlxBackend::SetDevice(int dev) {
-  PS_CHECK_GE(dev, 0) << "cannot set dev=" << dev << " for gpu backend";
-  PS_CHECK_LE(dev, 7) << "cannot set dev=" << dev << " for gpu backend";
+  static thread_local int max_num_dev = GetEnv("MAX_NUM_DEVICES_PER_NODE", 7);
+  PS_CHECK_GE(dev, 0) << "cannot set dev=" << dev << " for klx backend";
+  PS_CHECK_LE(dev, max_num_dev)
+      << "cannot set dev=" << dev << " for klx backend";
   static thread_local int gpu_idx = -1;
 
   gpu_idx_ = dev;
@@ -102,7 +103,7 @@ int KlxBackend::GetDeviceId() {
 }
 
 at::Device KlxBackend::GetDevice() {
-  PS_CHECK_GE(gpu_idx_, 0) << "device index is not initialized for gpu backend";
+  PS_CHECK_GE(gpu_idx_, 0) << "device index is not initialized for klx backend";
   return {at::kCUDA, static_cast<char>(gpu_idx_)};
 }
 
@@ -115,43 +116,29 @@ void* KlxBackend::Alloc(uint64_t size) {
 }
 
 void KlxBackend::Free(void* m) {
-#ifdef USE_MMAP_ALLOC
-  if (ha_da_map_.find(m) != ha_da_map_.end()) {
-    m = ha_da_map_[m];
-    free(m);
-  }
-#endif
   PS_CHECK_NE(m, nullptr) << "backend cannot free null memory";
-  PS_VLOG(3) << "free gpu memory " << m;
-  if (ha_da_map_.erase(m)) {
-    m = ha_da_map_[m];
+  PS_VLOG(3) << "free klx memory " << m;
+  {
+    std::lock_guard<std::mutex> lg(mtx_);
+    if (ha_da_map_.erase(m)) {
+      m = ha_da_map_[m];
+    }
   }
   KLX_RT_CALL(cudaFree, m);
 }
 
 void* KlxBackend::GetAccessibleAddr(void* devicePtr, size_t size) {
-#ifdef USE_MMAP_ALLOC
-  void* buf = mmap(nullptr, size, PROT_READ | PROT_WRITE,
-                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-  cudaMemcpy(buf, devicePtr, size, cudaMemcpyDeviceToHost);
-  ha_da_map_.emplace(buf, devicePtr);
-  return buf;
-#endif
-
   struct cudaPointerAttributes attrs;
   KLX_RT_CALL(cudaPointerGetAttributes, &attrs, devicePtr);
   PS_LOG(INFO) << "GetAccessibleAddr devicePtr=" << devicePtr
                << " hostPtr=" << attrs.hostPointer;
-  // size_t pagesz = sysconf(_SC_PAGESIZE);
-  // PS_CHECK_EQ(((uintptr_t)attrs.hostPointer % pagesz), 0) << "unaligned host
-  // ptr";
-
+  std::lock_guard<std::mutex> lg(mtx_);
   if (ha_da_map_.find(attrs.hostPointer) != ha_da_map_.end()) {
     return reinterpret_cast<char*>(attrs.hostPointer) +
            (reinterpret_cast<intptr_t>(devicePtr) -
             reinterpret_cast<intptr_t>(ha_da_map_[attrs.hostPointer]));
   }
-  ha_da_map_.emplace(attrs.hostPointer, devicePtr);
+  ha_da_map_.emplace_unique(attrs.hostPointer, devicePtr);
 
   return attrs.hostPointer;
 }
@@ -166,11 +153,8 @@ void* KlxBackend::GetAccessibleAddr(const at::Tensor& tensor) {
 }
 
 void* KlxBackend::GetDeviceAddrFromHostPtr(void* hostPtr, size_t size) {
+  std::lock_guard<std::mutex> lg(mtx_);
   PS_CHECK_NE(ha_da_map_.find(hostPtr), ha_da_map_.end());
-#ifdef USE_MMAP_ALLOC
-  KLX_RT_CALL(cudaMemcpy, ha_da_map_[hostPtr], hostPtr, size,
-              cudaMemcpyHostToDevice);
-#endif
   return ha_da_map_[hostPtr];
 }
 
@@ -218,7 +202,7 @@ void* KlxBackend::CreateCudaEvent() {
   cudaMallocHost(&ev, sizeof(cudaEvent_t));
   auto status = cudaEventCreateWithFlags(ev, cudaEventDisableTiming);
   PS_CHECK_EQ(status, cudaSuccess)
-      << "cudaEventCreateWithFlags failed for gpu " << gpu_idx_;
+      << "cudaEventCreateWithFlags failed for klx " << gpu_idx_;
   return reinterpret_cast<void*>(ev);
 }
 
@@ -245,7 +229,7 @@ int KlxBackend::RecordCudaEvent(void* event, void* stream) {
   if (status == cudaSuccess) {
     return BACKEND_OK;
   } else {
-    PS_LOG(WARNING) << "failed to record cuda event: "
+    PS_LOG(WARNING) << "failed to record klx event: "
                     << " (" << cudaGetErrorString(status) << ")";
     return BACKEND_FAILED;
   }
@@ -263,7 +247,7 @@ int KlxBackend::SyncCudaEvent(void* event) {
     break;
   }
   if (status != cudaSuccess) {
-    PS_LOG(WARNING) << "failed to sync cuda event: "
+    PS_LOG(WARNING) << "failed to sync klx event: "
                     << " (" << cudaGetErrorString(status) << ")";
     return BACKEND_FAILED;
   }

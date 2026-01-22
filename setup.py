@@ -97,6 +97,8 @@ if __name__ == "__main__":
         author='StepFun',
         version=get_version(),
         packages=['fserver'],
+        package_data={'fserver': [os.path.join(__PS_PATH__, 'libklx_backend.so')]},
+        include_package_data=True,
         url='',
         ext_modules=[
             CUDAExtension(
