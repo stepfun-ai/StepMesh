@@ -49,7 +49,7 @@ The following diagram illustrates the architecture of the **StepMesh** communica
 
 - Ubuntu OS
 - Servers with RDMA NICs and GPU cards.
-- PyTorch
+- torch >= 2.0.0
 - CUDA NVCC or other compilers
 
 ## Build
@@ -63,13 +63,13 @@ bash tools/install_deps.sh # only once
 
 Build StepMesh
 ```bash
-# Please check that your CUDA_HOME is correct
+# Please check that your CUDA_HOME is correct and torch is installed.
 
 # Build AF library
 make af
 
 # Build and install Fserver （AF's Python SDK）
-pip3 install -v -e .
+pip3 install -v -e . --no-build-isolation
 ```
 
 Build without cuda
@@ -80,7 +80,7 @@ Build without cuda
 USE_CUDA=0 make af
 
 # Build and install Fserver （AF's Python SDK）
-USE_CUDA=0 pip3 install -v -e .
+USE_CUDA=0 pip3 install -v -e . --no-build-isolation
 
 ```
 
