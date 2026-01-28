@@ -120,14 +120,14 @@ ROLE=joint RNIC=brainpf_bond0 bash tests/fserver/run_multi_gpu.sh
 ### 2. Two-Node Example
 - Run scheduler and servers
 ```bash
-# Server
-ROLE=server bash tests/fserver/run_multi_gpu.sh
-# the first line prints scheduler ip
+# server: RNIC: your first rdma nic; 
+ROLE=server RNIC=brainpf_bond0 bash tests/fserver/run_multi_gpu.sh
+# the first line will print scheduler ip used for worker
 ```
 
 - Run workers
 ```bash
-# worker
+# worker: RNIC: your first rdma nic; 
 ROLE=worker RNIC=brainpf_bond0 bash tests/fserver/run_multi_gpu.sh ${scheduler ip}
 ```
 
