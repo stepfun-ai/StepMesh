@@ -8,7 +8,7 @@
 #include <ATen/cuda/CUDAContext.h>
 #include <ATen/cuda/CUDAEvent.h>
 
-#include "ps/internal/backend.h"
+#include "ps/backend.h"
 
 namespace ps {
 

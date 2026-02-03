@@ -67,3 +67,4 @@ target_link_libraries(af
         ${TORCH_PYTHON_LIBRARY})
 
 add_subdirectory(tests)
+add_subdirectory(plugins/klx_backend)

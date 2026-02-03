@@ -4,7 +4,7 @@
 
 #include "ps/internal/cpu_backend.h"
 
-#include "ps/internal/backend.h"
+#include "ps/backend.h"
 
 namespace ps {
 

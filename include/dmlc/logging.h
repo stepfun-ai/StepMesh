@@ -71,25 +71,35 @@ inline void InitLogging(const char *argv0) {
   // DO NOTHING
 }
 
+constexpr const char *getFileName(const char *path) {
+  auto last = path + strlen(path);
+  while (*last != '/') {
+    --last;
+  }
+  return ++last;
+}
+
 // Always-on checking
-#define PS_CHECK(x)                                                      \
-  if (!(x))                                                           \
-  dmlc::LogMessageFatal(__FILE__, __LINE__).stream() << "Check "      \
-                                                        "failed: " #x \
-                                                     << ' '
+#define PS_CHECK(x)                                                     \
+  if (!(x))                                                             \
+  dmlc::LogMessageFatal(dmlc::getFileName(__FILE__), __LINE__).stream() \
+      << "Check "                                                       \
+         "failed: " #x                                                  \
+      << ' '
 #define PS_CHECK_LT(x, y) PS_CHECK((x) < (y))
 #define PS_CHECK_GT(x, y) PS_CHECK((x) > (y))
 #define PS_CHECK_LE(x, y) PS_CHECK((x) <= (y))
 #define PS_CHECK_GE(x, y) PS_CHECK((x) >= (y))
 #define PS_CHECK_EQ(x, y) PS_CHECK((x) == (y))
 #define PS_CHECK_NE(x, y) PS_CHECK((x) != (y))
-#define PS_CHECK_NOTNULL(x)                                                                 \
-  ((x) == NULL                                                                           \
-   ? dmlc::LogMessageFatal(__FILE__, __LINE__).stream() << "Check  notnull: " #x << ' ', \
+#define PS_CHECK_NOTNULL(x)                                                \
+  ((x) == NULL                                                             \
+   ? dmlc::LogMessageFatal(dmlc::getFileName(__FILE__), __LINE__).stream() \
+         << "Check  notnull: " #x << ' ',                                  \
    (x) : (x))  // NOLINT(*)
 // Debug-only checking.
 #ifdef NDEBUG
-/* 
+/*
 #define DPS_CHECK(x) \
   while (false) PS_CHECK(x)
 #define DPS_CHECK_LT(x, y) \
@@ -114,12 +124,12 @@ inline void InitLogging(const char *argv0) {
 #define DPS_CHECK_NE(x, y) PS_CHECK((x) != (y)) */
 #endif  // NDEBUG
 
-#define PS_LOG_API dmlc::LogMessage(__FILE__, __LINE__)
+#define PS_LOG_API dmlc::LogMessage(dmlc::getFileName(__FILE__), __LINE__)
 
 #define PS_LOG_IF(severity, condition) \
   !(condition) ? (void)0 : dmlc::LogMessageVoidify() & PS_LOG_API
 
-#define LOG_FATAL dmlc::LogMessageFatal(__FILE__, __LINE__)
+#define LOG_FATAL dmlc::LogMessageFatal(dmlc::getFileName(__FILE__), __LINE__)
 #define PS_LOG_FATAL LOG_FATAL.stream()
 #define LOG_QFATAL LOG_FATAL
 

@@ -17,7 +17,7 @@
 #ifdef STEPMESH_USE_TORCH
 #endif  // STEPMESH_USE_TORCH
 
-#include "ps/internal/backend.h"
+#include "ps/backend.h"
 #include "ps/internal/multi_qp.h"
 #include "ps/internal/trace.h"
 #include "ps/sarray.h"
